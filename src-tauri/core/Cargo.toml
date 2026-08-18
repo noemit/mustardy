@@ -1,0 +1,29 @@
+[package]
+name = "mustardy-core"
+version = "0.1.0"
+description = "Mustardy core: ffmpeg + native inference (llama.cpp, whisper.cpp)"
+authors = ["Mustardy"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+name = "mustardy_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "smoke"
+path = "src/bin/smoke.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+base64 = "0.22"
+encoding_rs = "0.8"
+ureq = { version = "3", features = ["json", "rustls"] }
+llama-cpp-2 = { version = "0.1.154", default-features = false, features = ["common", "mtmd"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { version = "0.1.154", default-features = false, features = ["common", "mtmd", "metal"] }
