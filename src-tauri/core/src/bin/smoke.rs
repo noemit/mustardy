@@ -96,7 +96,7 @@ fn cmd_ears_expect(video: &str, expect_words: bool) -> R {
     let pcm = ffmpeg::extract_pcm_16k(video).map_err(|e| e.to_string())?;
     eprintln!("[ears] pcm: {} samples ({:.1}s) in {:.1?}", pcm.len(), pcm.len() as f32 / 16000.0, t.elapsed());
     let t = std::time::Instant::now();
-    let tr = ears::transcribe(&pcm).map_err(|e| e.to_string())?;
+    let tr = ears::transcribe(&pcm, None).map_err(|e| e.to_string())?;
     println!("text: {}", tr.text);
     println!("words ({}):", tr.words.len());
     for w in tr.words.iter().take(24) {

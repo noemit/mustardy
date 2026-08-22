@@ -1,9 +1,39 @@
 //! Remote providers: Kimi (Moonshot) and Ollama. Port of electron/ai.cjs.
 
+use std::path::PathBuf;
+
 use serde::Serialize;
 use serde_json::json;
 
 use crate::{ChatMessage, CoreError, CoreResult};
+
+/// Where provider secrets live: the app-data dir, outside the webview's
+/// reach (localStorage is readable by any script that ever runs there).
+fn secret_file() -> PathBuf {
+    crate::models::app_data_dir().join(".kimi-key")
+}
+
+/// Persist the Kimi key next to the models, with user-only permissions.
+pub fn store_kimi_key(key: &str) -> CoreResult<()> {
+    let dir = crate::models::app_data_dir();
+    std::fs::create_dir_all(&dir)?;
+    let path = secret_file();
+    std::fs::write(&path, key.trim())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+/// The stored key, if any — never sent back to the webview wholesale; callers
+/// use it for request signing and presence checks only.
+pub fn load_kimi_key() -> Option<String> {
+    let raw = std::fs::read_to_string(secret_file()).ok()?;
+    let key = raw.trim().to_string();
+    (!key.is_empty()).then_some(key)
+}
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct AiSettings {
@@ -86,10 +116,16 @@ fn chat_ollama(cfg: &AiSettings, messages: Vec<ChatMessage>, system: String) -> 
 }
 
 fn chat_kimi(cfg: &AiSettings, messages: Vec<ChatMessage>, system: String) -> CoreResult<ChatOut> {
+    // Resolution order: a key typed this session (Settings form, held only
+    // in memory), env vars for headless use, then the on-disk secret the
+    // Settings panel persists.
     let key = if cfg.kimi_key.is_empty() {
         std::env::var("KIMI_API_KEY")
             .or_else(|_| std::env::var("MOONSHOT_API_KEY"))
-            .map_err(|_| CoreError::msg("Add a Kimi / Moonshot API key in Settings."))?
+            .ok()
+            .or_else(load_kimi_key)
+            .filter(|k| !k.is_empty())
+            .ok_or_else(|| CoreError::msg("Add a Kimi / Moonshot API key in Settings."))?
     } else {
         cfg.kimi_key.clone()
     };

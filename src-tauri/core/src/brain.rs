@@ -23,6 +23,15 @@ pub fn loaded() -> bool {
     cell().lock().map(|g| g.is_some()).unwrap_or(false)
 }
 
+/// Drop the loaded model to free memory. The next call to [`load`] (any
+/// planner request) brings it back — a reload is cheap relative to holding
+/// ~1 GB resident when the OS is squeezing the process.
+pub fn unload() {
+    if let Ok(mut guard) = cell().lock() {
+        *guard = None;
+    }
+}
+
 pub fn load() -> CoreResult<()> {
     let mut guard = cell().lock().map_err(|_| CoreError::msg("brain lock poisoned"))?;
     if guard.is_some() {

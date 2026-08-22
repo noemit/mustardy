@@ -4,11 +4,12 @@ import type { Settings } from "../types";
 type Props = {
   settings: Settings;
   models: string[];
+  kimiSaved: boolean;
   onClose: () => void;
   onSave: (next: Settings) => void;
 };
 
-export function SettingsModal({ settings, models, onClose, onSave }: Props) {
+export function SettingsModal({ settings, models, kimiSaved, onClose, onSave }: Props) {
   const [draft, setDraft] = useState(settings);
 
   function set<K extends keyof Settings>(key: K, value: Settings[K]) {
@@ -63,9 +64,14 @@ export function SettingsModal({ settings, models, onClose, onSave }: Props) {
               <input
                 type="password"
                 value={draft.kimiKey}
-                placeholder="Moonshot / Kimi key"
+                placeholder={kimiSaved ? "Saved on this Mac — type to replace" : "Moonshot / Kimi key"}
                 onChange={(e) => set("kimiKey", e.target.value)}
               />
+              <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>
+                {kimiSaved
+                  ? "Stored by the desktop app, not in the browser — typing a new key replaces it."
+                  : "Stored by the desktop app, never in the webview."}
+              </p>
             </div>
             <div className="field">
               <label>Kimi base URL</label>

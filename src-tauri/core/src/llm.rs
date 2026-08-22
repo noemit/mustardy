@@ -149,7 +149,11 @@ pub fn chat_once_with(
     let tokens = model
         .str_to_token(&prompt, AddBos::Never)
         .map_err(|e| CoreError::msg(format!("tokenize: {e}")))?;
-    if tokens.len() as u32 >= n_ctx - 64 {
+    // Leave real room for the response: reserving only a fixed 64-token
+    // sliver let long prompts + max_tokens run past n_ctx mid-generation,
+    // which aborts decode and burns an attempt.
+    let gen_reserve = (max_tokens as u32).min(n_ctx) + 16;
+    if tokens.len() as u32 >= n_ctx.saturating_sub(gen_reserve) {
         return Err(CoreError::msg("prompt too long for context"));
     }
     crate::log::line(&format!("brain prompt: {} token(s), ctx {n_ctx}", tokens.len()));

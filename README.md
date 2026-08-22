@@ -42,7 +42,8 @@ auto-name `A45`, `B34`, … (letter + whole seconds) and chat resolves them:
 remove.
 
 Runs on macOS (Metal-accelerated) and Linux. Kimi/Ollama remain optional
-providers; API keys never touch the webview.
+providers; API keys are stored by the desktop app (`app-data/.kimi-key`,
+user-only permissions) and never persisted in webview localStorage.
 
 ## Develop
 

@@ -14,9 +14,12 @@ export function localPlan(
   const changes: Change[] = [];
   const wantsSilence = /silence|dead air|tight|pause|quiet|gap/.test(q);
   const wantsFillers = /um+|uh+|filler|stutter|remove where i say|cut the um/.test(q);
-  const wantsTitle = /title|overlay|caption|text|thumbnail|hook|youtube/.test(q);
-  const wantsPan = /pan|ken burns|interesting|dynamic/.test(q);
+  // Word boundaries matter here — /pan/ used to hijack "panic shake" into
+  // queuing camera pans (the exact regression class THOUGHTS.md warns about).
+  const wantsPan = /\bpans?\b|\bpanning\b|ken burns|interesting|dynamic/.test(q);
   const wantsAll = /make it|edit (this|it)|do your thing|clean (it )?up|full pass|youtube/.test(q);
+  const wantsTitle = /title|overlay|caption|text|thumbnail|hook|youtube/.test(q);
+  const wantsSmash = /text ?card|smash|cut to text/.test(q);
   const visual = captions.find((c) => matchesAsk(q, c.text)) || captions[0];
   const at = visual ? clamp(visual.t, 0, Math.max(0, video.duration - 0.4)) : Math.min(1.2, video.duration * 0.2);
 
@@ -34,7 +37,9 @@ export function localPlan(
     );
   }
   if (wantsSilence || wantsAll) changes.push(...silenceCuts(silences));
-  if (wantsTitle || wantsAll) {
+  // A smash-to-text request IS the title card — don't also drop a generic
+  // opening overlay on top of it.
+  if ((wantsTitle && !wantsSmash) || wantsAll) {
     const quoted = prompt.match(/["“](.+?)["”]/);
     const text = quoted?.[1] || hookFromCaption(visual?.text || "") || guessTitle(video.name) || "WATCH THIS";
     const start = visual && !quoted ? Math.max(0, visual.t - 0.15) : 0.2;

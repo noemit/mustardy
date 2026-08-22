@@ -10,7 +10,7 @@ use mustardy_core::models::{self, ModelStatus};
 use mustardy_core::{brain, ears, eyes, visual};
 use mustardy_core::{Caption, ChatMessage, EngineStatus, ExportPayload, SilenceRange, Transcript, VideoMeta};
 use serde::Deserialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 fn emit_status(app: &AppHandle, s: EngineStatus) {
     let _ = app.emit("engine-status", s);
@@ -29,10 +29,18 @@ fn log_line(line: String) {
 }
 
 #[tauri::command]
-async fn probe(path: String) -> Result<VideoMeta, String> {
-    tauri::async_runtime::spawn_blocking(move || ffmpeg::probe(&path).map_err(err))
-        .await
-        .map_err(err)?
+async fn probe(app: AppHandle, path: String) -> Result<VideoMeta, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // Grant asset-protocol read access per opened file instead of a
+        // static "**" scope — the webview can only ever fetch videos the
+        // user actually opened through this app.
+        app.asset_protocol_scope()
+            .allow_file(&path)
+            .map_err(err)?;
+        ffmpeg::probe(&path).map_err(err)
+    })
+    .await
+    .map_err(err)?
 }
 
 #[tauri::command]
@@ -193,12 +201,53 @@ async fn brain_plan(
 
 #[tauri::command]
 fn write_text(path: String, contents: String) -> Result<(), String> {
+    ensure_text_scope(&path)?;
     std::fs::write(&path, contents).map_err(err)
 }
 
 #[tauri::command]
 fn read_text(path: String) -> Result<String, String> {
+    ensure_text_scope(&path)?;
+    let meta = std::fs::metadata(&path).map_err(err)?;
+    if meta.len() > MAX_READ_BYTES {
+        return Err("project file too large (>16 MB)".into());
+    }
     std::fs::read_to_string(&path).map_err(err)
+}
+
+/// Text-file commands only ever serve projects and transcript exports, both
+/// produced by native dialogs — pin them to those extensions (and cap reads)
+/// so a compromised webview can't browse arbitrary files.
+const TEXT_FILE_EXTS: [&str; 3] = ["json", "txt", "srt"];
+const MAX_READ_BYTES: u64 = 16 * 1024 * 1024;
+
+fn ensure_text_scope(path: &str) -> Result<(), String> {
+    let ext_ok = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .is_some_and(|e| TEXT_FILE_EXTS.contains(&e.as_str()));
+    if ext_ok {
+        Ok(())
+    } else {
+        mustardy_core::log::line(&format!("blocked out-of-scope file op: {path}"));
+        Err(format!(
+            "Mustardy only reads/writes {} files",
+            TEXT_FILE_EXTS.join(", ")
+        ))
+    }
+}
+
+/// Provider API keys are persisted by the desktop app (app-data dir,
+/// user-only perms), never in webview localStorage.
+#[tauri::command]
+fn save_kimi_key(key: String) -> Result<(), String> {
+    ai::store_kimi_key(&key).map_err(err)
+}
+
+#[tauri::command]
+fn kimi_key_saved() -> bool {
+    ai::load_kimi_key().is_some()
 }
 
 #[tauri::command]
@@ -235,6 +284,8 @@ fn main() {
             transcribe,
             write_text,
             read_text,
+            save_kimi_key,
+            kimi_key_saved,
             log_line,
         ])
         .run(tauri::generate_context!())

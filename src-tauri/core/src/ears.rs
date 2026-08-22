@@ -3,8 +3,8 @@
 //! ggml; separate processes sidestep the symbol collision).
 
 use std::io::Write;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::models::{self, EARS_MODEL};
 use crate::{CoreError, CoreResult, Transcript};
@@ -76,7 +76,11 @@ pub fn loaded() -> bool {
 }
 
 /// Transcribe 16 kHz mono f32 PCM via the sidecar. Word timestamps come from
-/// whisper's DTW token timestamps.
+/// whisper's DTW token timestamps. If the sidecar is killed outright (the
+/// SIGKILL-with-empty-stderr pattern seen under macOS memory pressure while
+/// the big llama.cpp models sit resident), the eyes/brain models are evicted
+/// — every engine reloads lazily on its next use — and transcription runs
+/// once more before giving up.
 pub fn transcribe(pcm: &[f32], model_name: Option<&str>) -> CoreResult<Transcript> {
     let spec = models::ears_file(model_name);
     let model = models::find(spec)
@@ -96,36 +100,78 @@ pub fn transcribe(pcm: &[f32], model_name: Option<&str>) -> CoreResult<Transcrip
     }
 
     let started = std::time::Instant::now();
-    let out = Command::new(bin)
-        .arg(model.to_string_lossy().as_ref())
-        .arg(&tmp)
-        .stdin(Stdio::null())
-        .stderr(Stdio::piped())
-        .output();
-    let _ = std::fs::remove_file(&tmp);
-    let out = out.map_err(|e| CoreError::msg(format!("spawn ears: {e}")))?;
+    let audio_secs = pcm.len() as f64 / 16000.0;
+
+    let mut out = match run_ears(&bin, &model, &tmp) {
+        Ok(out) => out,
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(CoreError::msg(format!("spawn ears: {e}")));
+        }
+    };
+    if !out.status.success() && killed_quietly(&out) {
+        crate::log::line(
+            "error: ears was killed with no stderr (OS memory pressure?) — \
+             unloading eyes/brain and retrying once",
+        );
+        crate::brain::unload();
+        crate::eyes::unload();
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        out = match run_ears(&bin, &model, &tmp) {
+            Ok(out) => out,
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(CoreError::msg(format!("spawn ears (retry): {e}")));
+            }
+        };
+    }
+
     if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let stderr = stderr.trim();
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
         crate::log::line(&format!(
-            "error: ears died ({}) after {:.1?} on {:.1}s of audio; stderr: {}",
+            "error: ears died ({}) after {:.1?} on {audio_secs:.1}s of audio; stderr: {}",
             out.status,
             started.elapsed(),
-            pcm.len() as f64 / 16000.0,
             stderr.chars().take(400).collect::<String>()
         ));
+        let _ = std::fs::remove_file(&tmp);
         return Err(CoreError::msg(format!(
             "ears exited {}: {}",
             out.status,
             stderr.chars().take(500).collect::<String>()
         )));
     }
-    let transcript: Transcript = serde_json::from_slice(&out.stdout)?;
+    let parsed: CoreResult<Transcript> =
+        serde_json::from_slice(&out.stdout).map_err(Into::into);
+    let _ = std::fs::remove_file(&tmp);
+    let transcript = parsed?;
     crate::log::line(&format!(
-        "ears: transcribed {:.1}s of audio, {} word(s), {} char(s)",
-        pcm.len() as f64 / 16000.0,
+        "ears: transcribed {audio_secs:.1}s of audio, {} word(s), {} char(s)",
         transcript.words.len(),
         transcript.text.len()
     ));
     Ok(transcript)
+}
+
+fn run_ears(bin: &str, model: &Path, pcm_path: &Path) -> std::io::Result<std::process::Output> {
+    Command::new(bin).arg(model).arg(pcm_path).output()
+}
+
+/// True when the sidecar died by signal (SIGKILL on unix) with nothing on
+/// stderr — the signature of an OOM-style kill rather than a whisper crash.
+fn killed_quietly(out: &std::process::Output) -> bool {
+    if out.status.success() || !out.stderr.is_empty() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        out.status.signal() == Some(9) // SIGKILL
+    }
+    #[cfg(not(unix))]
+    {
+        // Where signals aren't exposed, 137 (128 + SIGKILL) is the usual
+        // shell-level footprint of the same kill.
+        out.status.code() == Some(137)
+    }
 }

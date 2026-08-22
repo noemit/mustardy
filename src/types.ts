@@ -93,6 +93,7 @@ export type Settings = {
   silenceNoise: string;
   silenceMin: number;
   whisperModel: "tiny.en" | "small.en";
+  theme: "light" | "dark";
 };
 
 export type ProjectFile = {

@@ -228,7 +228,10 @@ export async function visualChangeTimes(
 }
 
 async function detectSilenceWeb(url: string, minDur: number) {
-  const ctx = new AudioContext();
+  // Decode straight into a 16 kHz mono context — decodeAudioData resamples
+  // to the context rate, so long videos cost ~1/6 the RAM of decoding at the
+  // file's own stereo/full rate.
+  const ctx = new OfflineAudioContext(1, 1, 16000);
   try {
     const buf = await (await fetch(url)).arrayBuffer();
     const audio = await ctx.decodeAudioData(buf);
@@ -257,8 +260,6 @@ async function detectSilenceWeb(url: string, minDur: number) {
     return ranges;
   } catch {
     return [];
-  } finally {
-    void ctx.close();
   }
 }
 
@@ -365,9 +366,29 @@ export async function loadSettings(): Promise<Settings> {
     silenceNoise: stored.silenceNoise || "-30dB",
     silenceMin: stored.silenceMin ?? 0.6,
     whisperModel: stored.whisperModel === "small.en" ? "small.en" : "tiny.en",
+    theme: stored.theme === "dark" ? "dark" : "light",
   };
 }
 
 export async function saveSettings(next: Settings) {
-  localStorage.setItem("mustardy-settings", JSON.stringify(next));
+  // The API key is persisted by the desktop app (app-data dir), never here —
+  // localStorage is readable by anything that ever runs in the webview.
+  const { kimiKey: _dropped, ...persisted } = next;
+  void _dropped;
+  localStorage.setItem("mustardy-settings", JSON.stringify(persisted));
+}
+
+/** Store the Kimi key in the desktop-side secret store. The webview only
+ * holds a freshly typed key in memory until this call lands. */
+export async function saveKimiKey(key: string) {
+  if (!native) return;
+  const { invoke } = await api();
+  await invoke("save_kimi_key", { key });
+}
+
+/** Whether the desktop side already has a Kimi key on file. */
+export async function kimiKeySaved(): Promise<boolean> {
+  if (!native) return false;
+  const { invoke } = await api();
+  return invoke<boolean>("kimi_key_saved");
 }

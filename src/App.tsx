@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChangeRail } from "./components/ChangeRail";
 import { Chat } from "./components/Chat";
+import { PackageModal } from "./components/PackageModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { Timeline } from "./components/Timeline";
 import { Titlebar } from "./components/Titlebar";
 import { VideoStage } from "./components/VideoStage";
 import { EyesBar } from "./components/EyesBar";
 import {
-  chat,
   detectSilence,
   exportProject,
+  kimiKeySaved,
   listModels,
   loadSettings,
   loadVideoAt,
@@ -19,37 +20,32 @@ import {
   quitApp,
   readText,
   reveal,
+  saveKimiKey,
   savePath,
   saveSettings,
   visualChangeTimes,
   writeText,
 } from "./lib/bridge";
 import {
-  SYSTEM_PROMPT,
-  dedupeCuts,
   editedToSource,
-  explicitTimeCuts,
   formatTime,
   isInAcceptedCut,
   nextTagName,
+  sanitizeChanges,
   skippableCuts,
-  normalizeDraft,
-  parseAgentJson,
-  silenceCuts,
   uid,
-  unknownTagMentions,
 } from "./lib/edits";
 import {
   getBrainStatus,
   onBrainStatus,
-  planWithGemma,
   type BrainStatus,
 } from "./lib/gemma";
-import { describePlan, describeScene, localPlan } from "./lib/planner";
+import { planEdits } from "./lib/plan";
+import { grabFrames } from "./lib/frames";
+import { keptTranscript, sampleKeepTimes, suggestPackage, type PackIdea } from "./lib/package";
+import { describePlan } from "./lib/planner";
 import {
   fillerCuts,
-  formatTranscript,
-  phraseTimeCuts,
   transcriptToSrt,
   transcriptToTxt,
   transcribeWhisper,
@@ -71,6 +67,15 @@ import type {
 export function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastHydrate = useRef<{ key: string; at: number } | null>(null);
+  const blobUrl = useRef<string | null>(null);
+
+  /** Swap the tracked drag-drop blob URL, revoking the one it replaces so
+   * repeated drops don't pin every old video in memory. */
+  function adoptBlobUrl(url: string | null) {
+    const prev = blobUrl.current;
+    blobUrl.current = url;
+    if (prev && prev !== url) URL.revokeObjectURL(prev);
+  }
   const [video, setVideo] = useState<VideoInfo | null>(null);
   const [silences, setSilences] = useState<SilenceRange[]>([]);
   const [captions, setCaptions] = useState<Caption[]>([]);
@@ -93,11 +98,29 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [models, setModels] = useState<string[]>([]);
+  const [pack, setPack] = useState<{ ideas: PackIdea[]; frames: Array<{ t: number; dataUrl: string }> } | null>(null);
   const [eyes, setEyes] = useState<EyesStatus>(getEyesStatus());
   const [brain, setBrain] = useState<BrainStatus>(getBrainStatus());
+  const [kimiSaved, setKimiSaved] = useState(false);
 
   useEffect(() => {
-    loadSettings().then(setSettings);
+    void (async () => {
+      const loaded = await loadSettings();
+      // Migrate: older builds kept the Kimi key in webview localStorage.
+      // Push it to the desktop-side secret store once, then scrub it here —
+      // localStorage is readable by anything that ever runs in the page.
+      if (loaded.kimiKey && native) {
+        try {
+          await saveKimiKey(loaded.kimiKey);
+        } catch (e) {
+          logUi(`kimi key migration failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      const cleaned = { ...loaded, kimiKey: "" };
+      if (loaded.kimiKey) await saveSettings(cleaned);
+      setSettings(cleaned);
+      setKimiSaved(await kimiKeySaved().catch(() => false));
+    })();
     const offEyes = onEyesStatus(setEyes);
     const offBrain = onBrainStatus(setBrain);
     return () => {
@@ -114,6 +137,17 @@ export function App() {
       listModels({ provider: "ollama", settings }).then((r) => setModels(r.models));
     }
   }, [settings]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = settings?.theme || "light";
+  }, [settings]);
+
+  function toggleTheme() {
+    if (!settings) return;
+    const next: Settings = { ...settings, theme: settings.theme === "dark" ? "light" : "dark" };
+    setSettings(next);
+    void saveSettings(next);
+  }
 
   useEffect(() => {
     const el = videoRef.current;
@@ -200,13 +234,18 @@ export function App() {
 
   async function loadFile(file: File) {
     const url = URL.createObjectURL(file);
+    adoptBlobUrl(url);
     const probeEl = document.createElement("video");
     probeEl.preload = "metadata";
     probeEl.src = url;
-    await new Promise<void>((resolve) => {
-      probeEl.onloadedmetadata = () => resolve();
-      probeEl.onerror = () => resolve();
-    });
+    // A stalled or corrupt file must not hang the drop handler forever.
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        probeEl.onloadedmetadata = () => resolve();
+        probeEl.onerror = () => resolve();
+      }),
+      new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+    ]);
     await hydrate({
       path: file.name,
       url,
@@ -376,10 +415,11 @@ export function App() {
     const next = await loadVideoAt(proj.video.path);
     if (!next) throw new Error(`video missing: ${proj.video.path}`);
     lastHydrate.current = { key: `${next.path}|${next.duration}`, at: Date.now() };
+    adoptBlobUrl(null); // switching to a file-path source — release any blob
     setVideo(next);
     setSilences(proj.silences || []);
     setTranscript(proj.transcript || { text: "", words: [], source: "none" });
-    setChanges(proj.changes || []);
+    setChanges(sanitizeChanges(proj.changes || [], next.duration));
     setTags(proj.tags || []);
     setCaptions([]);
     setSelectedId(null);
@@ -468,131 +508,17 @@ export function App() {
     setBusy(true);
     setActivity("Planning edits…");
     try {
-      const context = [
-        `Video: ${video.name}, duration ${video.duration.toFixed(2)}s, ${video.width}x${video.height}.`,
-        silences.length
-          ? `Detected silences: ${JSON.stringify(silences.map((s) => [Number(s.start.toFixed(2)), Number(s.end.toFixed(2))]))}`
-          : "No silence ranges detected (or FFmpeg not available in this session).",
-        changes.length
-          ? `Existing changes: ${JSON.stringify(changes.map((c) => ({ type: c.type, start: c.start, end: c.end, status: c.status, label: c.label })))}`
-          : "No edits yet.",
-      ].join("\n");
-
-      let reply = "";
-      let incoming: Change[] = [];
-      let seen = captions;
-
-      // Deterministic cuts first — user-named times ("trim everything after
-      // 17:07", "cut between @a45 and @b34") and transcript phrases ("trim
-      // after I say thanks") never go through a model. Silence trims are
-      // mechanical too: built straight from the audio scan, but only when the
-      // user actually names silences (a bare "trim …" is not a silence request).
-      const needsWords =
-        /\b(after|before)\s+(?:i|we)\s+say\b|\bfiller\b|\bum+\b|\bstutter\b|\btranscrib/i.test(
-          text
-        );
-      const liveTranscript = needsWords ? await ensureTranscript(video) : transcript;
-      const explicitCuts = explicitTimeCuts(text, video.duration, tags);
-      const unknownTags = unknownTagMentions(text, tags);
-      const phraseResult = phraseTimeCuts(text, liveTranscript, video.duration);
-      const wantsSilence = /silence|dead air|tight|pause|quiet|gap/.test(text.toLowerCase());
-      const silencePreCuts = dedupeCuts(wantsSilence ? silenceCuts(silences) : [], changes);
-      const preCuts = [...explicitCuts, ...phraseResult.cuts, ...silencePreCuts];
-      const plannerSilences = preCuts.length ? [] : silences; // planners add their own otherwise
-      const hushNote =
-        wantsSilence && silences.length
-          ? "\nSilence trims are already queued as cuts — do NOT emit cuts for silences."
-          : "";
-
-      try {
-        if (settings.provider === "kimi" || settings.provider === "ollama") {
-          const result = await chat({
-            provider: settings.provider,
-            settings,
-            system: SYSTEM_PROMPT,
-            images: [],
-            messages: [
-              {
-                role: "user",
-                content: `${context}${hushNote}\n\nTranscript: ${formatTranscript(liveTranscript)}\n\nUser: ${text}`,
-              },
-            ],
-          });
-          const parsed = parseAgentJson(result.text);
-          reply = parsed.message;
-          incoming = normalizeDraft(parsed.draft, video.duration);
-        } else {
-          // Built-in vocabulary first — most edits come from the transcript,
-          // the audio scan, and what the user literally asked. The local
-          // brain only spins up when nothing matched (loads on demand).
-          incoming = localPlan(text, video, plannerSilences, seen, liveTranscript);
-          if (!incoming.length && !preCuts.length) {
-            const planned = await planWithGemma({
-              prompt: text,
-              video,
-              silences,
-              captions: seen,
-              transcript: formatTranscript(liveTranscript),
-              existing: changes,
-              silencesHandled: wantsSilence && silences.length > 0,
-            });
-            incoming = planned.changes;
-          }
-          reply = describePlan(incoming, describeScene(seen));
-        }
-      } catch (err) {
-        incoming = localPlan(text, video, plannerSilences, seen, liveTranscript);
-        reply = `${describePlan(incoming, describeScene(seen))}\n\n(${err instanceof Error ? err.message : "model unavailable"} — used the built-in editor.)`;
-      }
-
-      if (!incoming.length && !preCuts.length) {
-        const fallback = localPlan(text, video, plannerSilences, seen, liveTranscript);
-        if (fallback.length) {
-          incoming = fallback;
-          if (!reply) reply = describePlan(fallback);
-        }
-      }
-
-      // Drop planner cuts that redo a range we already queued deterministically.
-      if (preCuts.length) {
-        incoming = incoming.filter(
-          (c) => c.type !== "cut" || !preCuts.some((p) => c.start < p.end && c.end > p.start)
-        );
-      }
-      const plannerChanges = incoming;
-      incoming = [...preCuts, ...plannerChanges].sort((a, b) => a.start - b.start);
-
-      // Report deterministic cuts in the app's own words, and keep whatever
-      // the planner said about its own changes instead of burying it.
-      if (preCuts.length || wantsSilence || phraseResult.phrase || unknownTags.length) {
-        const notes: string[] = [];
-        for (const c of [...explicitCuts, ...phraseResult.cuts]) notes.push(`Queued: ${c.label}.`);
-        if (unknownTags.length) {
-          notes.push(
-            `No tag ${unknownTags.map((n) => `@${n}`).join(", ")} — press T to tag the playhead first.`
-          );
-        }
-        if (phraseResult.phrase && !phraseResult.cuts.length) {
-          notes.push(
-            liveTranscript.words.length
-              ? `I couldn't find “${phraseResult.phrase}” in the transcript.`
-              : `Can't look for “${phraseResult.phrase}” — no transcript.`
-          );
-        }
-        if (silencePreCuts.length) {
-          notes.push(
-            `Queued ${silencePreCuts.length} silence trim${silencePreCuts.length === 1 ? "" : "s"} from the audio scan.`
-          );
-        } else if (wantsSilence) {
-          notes.push(
-            silences.length ? "Those silences are already queued." : "No quiet stretches on file — nothing to trim."
-          );
-        }
-        const rest = plannerChanges.length
-          ? reply || describePlan(plannerChanges, describeScene(seen))
-          : "";
-        reply = [notes.join(" "), rest].filter(Boolean).join("\n\n");
-      }
+      const { changes: incoming, reply } = await planEdits({
+        prompt: text,
+        video,
+        silences,
+        captions,
+        transcript,
+        changes,
+        tags,
+        settings,
+        ensureTranscript: () => ensureTranscript(video),
+      });
 
       if (incoming.length) {
         setChanges((all) => [...all, ...incoming]);
@@ -668,6 +594,31 @@ export function App() {
     }
   }
 
+  async function onPackage() {
+    if (!video) return;
+    setBusy(true);
+    setActivity("Looking at the trimmed cut…");
+    try {
+      const live = await ensureTranscript(video);
+      const text = keptTranscript(live, video.duration, changes);
+      const times = sampleKeepTimes(video.duration, changes, 10);
+      const shots = await grabFrames(video.url, times, 720);
+      setPack({ ideas: suggestPackage(text || live.text || video.name, video.name), frames: shots });
+    } catch (e) {
+      setMessages((m) => [
+        ...m,
+        {
+          id: uid("m"),
+          role: "assistant",
+          text: `Couldn't build the package (${e instanceof Error ? e.message : String(e)}).`,
+        },
+      ]);
+    } finally {
+      setBusy(false);
+      setActivity(null);
+    }
+  }
+
   function showBanner(eyes: EyesStatus, brain: BrainStatus) {
     return (
       eyes.state === "downloading" ||
@@ -718,16 +669,20 @@ export function App() {
         provider={settings?.provider || "local"}
         eyes={eyes}
         brain={brain}
+        theme={settings?.theme || "light"}
+        onToggleTheme={toggleTheme}
         onOpen={loadFromPicker}
         onSave={() => void saveProject()}
         onTranscript={() => void (transcript.words.length ? exportTranscript() : ensureTranscript(video!))}
         onSettings={() => setSettingsOpen(true)}
         onExport={onExport}
+        onPackage={() => void onPackage()}
         onQuit={() => void quitApp()}
         canSave={Boolean(video)}
         canTranscript={Boolean(video)}
         hasTranscript={transcript.words.length > 0}
         canExport={Boolean(video)}
+        canPackage={Boolean(video)}
       />
       <EyesBar status={barStatus(eyes, brain)} />
       <div className="workspace">
@@ -784,7 +739,9 @@ export function App() {
             }}
             transcribing={activity === "Transcribing audio…"}
             onCutWords={(from, to) => {
-              const cut = wordRangeCut(transcript.words, from, to);
+              const raw = wordRangeCut(transcript.words, from, to);
+              if (!raw) return;
+              const [cut] = sanitizeChanges([raw], video?.duration || 0);
               if (!cut) return;
               setChanges((all) => [...all, cut]);
               setSelectedId(cut.id);
@@ -793,14 +750,34 @@ export function App() {
           />
         </div>
       </div>
+      {pack && (
+        <PackageModal
+          ideas={pack.ideas}
+          frames={pack.frames}
+          duration={video?.duration || 0}
+          onClose={() => setPack(null)}
+        />
+      )}
       {settingsOpen && settings && (
         <SettingsModal
           settings={settings}
           models={models}
+          kimiSaved={kimiSaved}
           onClose={() => setSettingsOpen(false)}
           onSave={async (next) => {
-            setSettings(next);
-            await saveSettings(next);
+            // A freshly typed key goes to the desktop-side store; the
+            // webview keeps it in memory only.
+            if (native && next.kimiKey.trim()) {
+              try {
+                await saveKimiKey(next.kimiKey.trim());
+                setKimiSaved(true);
+              } catch (e) {
+                logUi(`saving kimi key failed: ${e instanceof Error ? e.message : String(e)}`);
+              }
+            }
+            const persisted = { ...next, kimiKey: "" };
+            setSettings(persisted);
+            await saveSettings(persisted);
           }}
         />
       )}

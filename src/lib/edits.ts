@@ -122,6 +122,25 @@ export function silenceCuts(
   return out;
 }
 
+/** Minimum believable edit span (seconds) — anything shorter is noise. */
+const MIN_SPAN_S = 0.08;
+
+/** One gate every queued change passes through: times clamped to the video,
+ * ordered edges, real span. Degenerate ranges (a zero-length cut at the very
+ * end once reached the timeline) die here instead of in preview/export. */
+export function sanitizeChanges(list: Change[], duration: number): Change[] {
+  const max = Math.max(0, duration);
+  const out: Change[] = [];
+  for (const c of list) {
+    const start = clampNum(c.start, 0, Math.max(0, max - MIN_SPAN_S));
+    let end = clampNum(c.end, 0, max);
+    if (c.type === "cut" && end - start < MIN_SPAN_S) continue;
+    if (end <= start) end = Math.min(max, start + MIN_SPAN_S);
+    out.push({ ...c, start, end });
+  }
+  return out;
+}
+
 /** Drop cuts that overlap an already-queued (non-rejected) cut, so asking
  * twice doesn't stack duplicates. Only cut-vs-cut; other types pass through. */
 export function dedupeCuts(cuts: Change[], existing: Change[]): Change[] {

@@ -6,7 +6,6 @@
 //! 3. `src-tauri/binaries/` (dev, via CARGO_MANIFEST_DIR)
 //! 4. bare name on PATH
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -88,33 +87,94 @@ pub fn resolve_bin(name: &str) -> String {
     name.to_string() // PATH
 }
 
+/// Run a bundled CLI to completion and capture its output. Both pipes are
+/// drained concurrently (`output()` reads them on worker threads) — reading
+/// stdout and then stderr sequentially deadlocks once a chatty child (ffmpeg
+/// progress lines) fills the pipe nobody is draining yet.
 fn run(cmd: &str, args: &[String]) -> CoreResult<(String, String)> {
-    let mut child = Command::new(cmd)
+    let out = Command::new(cmd)
         .args(args)
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .output()
         .map_err(|e| CoreError::msg(format!("spawn {cmd}: {e}")))?;
-    let mut stdout = String::new();
-    let mut stderr = String::new();
-    if let Some(mut o) = child.stdout.take() {
-        o.read_to_string(&mut stdout).ok();
-    }
-    if let Some(mut e) = child.stderr.take() {
-        e.read_to_string(&mut stderr).ok();
-    }
-    let status = child.wait()?;
-    if status.success() {
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    if out.status.success() {
         Ok((stdout, stderr))
     } else {
-        let tail: String = stderr.chars().rev().take(2000).collect::<String>().chars().rev().collect();
-        Err(CoreError::msg(if tail.is_empty() {
-            format!("{cmd} exited {status}")
+        Err(CoreError::msg(if stderr.trim().is_empty() {
+            format!("{cmd} exited {}", out.status)
         } else {
-            tail
+            ffmpeg_error_line(&stderr)
         }))
     }
+}
+
+/// Pull the single most useful line out of ffmpeg/ffprobe stderr: version and
+/// configuration banners are skipped, explicit error lines win, and the last
+/// substantive line is the fallback — so users see "Invalid argument …"
+/// instead of a wall of --enable-* build flags.
+fn ffmpeg_error_line(stderr: &str) -> String {
+    const BANNER_PREFIXES: [&str; 13] = [
+        "configuration:",
+        "built with",
+        "ffmpeg version",
+        "ffprobe version",
+        "libavutil",
+        "libavcodec",
+        "libavformat",
+        "libavdevice",
+        "libswresample",
+        "libswscale",
+        "libpostproc",
+        "Copyright",
+        "--",
+    ];
+    let banner = |raw: &str| {
+        let t = raw.trim_start();
+        t.is_empty()
+            || BANNER_PREFIXES.iter().any(|p| t.starts_with(p))
+            || t.starts_with("Press [q]")
+            || t.starts_with("frame=")
+            || t.starts_with("size=")
+    };
+    let errish = |raw: &str| {
+        let t = raw.to_lowercase();
+        [
+            "error",
+            "invalid",
+            "no such",
+            "could not",
+            "cannot",
+            "unable",
+            "failed",
+            "denied",
+            "not found",
+            "unrecognized",
+            "does not exist",
+        ]
+        .iter()
+        .any(|k| t.contains(k))
+    };
+    // Progress updates reuse one row via \r, so split on both separators.
+    let lines: Vec<&str> = stderr
+        .split('\n')
+        .flat_map(|l| l.split('\r'))
+        .map(str::trim)
+        .filter(|l| !banner(l))
+        .collect();
+    let chosen = lines
+        .iter()
+        .rev()
+        .find(|l| errish(l))
+        .or_else(|| lines.iter().rev().find(|l| !l.is_empty()))
+        .copied()
+        .unwrap_or("no diagnostic output");
+    let mut short: String = chosen.chars().take(300).collect();
+    if short.len() < chosen.len() {
+        short.push('…');
+    }
+    short
 }
 
 fn s(v: &str) -> String {
@@ -497,22 +557,15 @@ pub fn export_project(payload: &ExportPayload) -> CoreResult<()> {
         .map(|c| (*c).clone())
         .collect();
 
-    let keep = invert_cuts(payload.duration, &cuts);
+    let mut keep = invert_cuts(payload.duration, &cuts);
+    keep.retain(|s| s.end - s.start >= 0.08);
     if keep.is_empty() {
         return Err(CoreError::msg("Nothing left to export after cuts."));
     }
 
     let ffmpeg = resolve_bin("ffmpeg");
-    // Cuts-only: one encode pass instead of one encode per keep-segment.
-    // Overlays/pans/fx still need the per-segment graph.
-    if overlays.is_empty() && pans.is_empty() && fx.is_empty() {
-        let result = export_cuts_one_pass(&ffmpeg, payload, &keep);
-        match &result {
-            Ok(()) => crate::log::line(&format!("export done in {:.1?} (one-pass cuts)", t0.elapsed())),
-            Err(e) => crate::log::line(&format!("export failed: {e}")),
-        }
-        return result;
-    }
+    let fps = probe(&payload.input).map(|m| if m.fps > 1.0 { m.fps } else { 30.0 }).unwrap_or(30.0);
+    crate::log::line(&format!("export: {} keep-segment(s) @ {:.2} fps", keep.len(), fps));
 
     let font = pick_font();
     let tmp = std::env::temp_dir().join(format!("mustardy-{}", std::process::id()));
@@ -581,34 +634,43 @@ pub fn export_project(payload: &ExportPayload) -> CoreResult<()> {
                 }
             }
             args.extend([
+                s("-r"), format!("{:.3}", fps),
+                s("-vsync"), s("cfr"),
                 s("-c:v"), s("libx264"), s("-preset"), s("veryfast"), s("-crf"), s("18"),
                 s("-c:a"), s("aac"), s("-b:a"), s("192k"),
-                s("-movflags"), s("+faststart"), s("-pix_fmt"), s("yuv420p"),
+                s("-pix_fmt"), s("yuv420p"),
                 seg_path.to_string_lossy().into_owned(),
             ]);
             run(&ffmpeg, &args)?;
             parts.push(seg_path);
         }
 
+        let staged = tmp.join("out.mp4");
         if parts.len() == 1 {
-            std::fs::copy(&parts[0], &payload.output)?;
-            return Ok(());
+            remux_faststart(&ffmpeg, &parts[0], &staged)?;
+        } else {
+            let list_path = tmp.join("list.txt");
+            let list = parts
+                .iter()
+                .map(|p| format!("file '{}'", p.to_string_lossy().replace('\'', "'\\''")))
+                .collect::<Vec<_>>()
+                .join("\n");
+            std::fs::write(&list_path, list)?;
+            let joined = tmp.join("joined.mp4");
+            run(
+                &ffmpeg,
+                &[
+                    s("-y"), s("-f"), s("concat"), s("-safe"), s("0"),
+                    s("-i"), list_path.to_string_lossy().into_owned(),
+                    s("-c"), s("copy"),
+                    joined.to_string_lossy().into_owned(),
+                ],
+            )?;
+            remux_faststart(&ffmpeg, &joined, &staged)?;
         }
-        let list_path = tmp.join("list.txt");
-        let list = parts
-            .iter()
-            .map(|p| format!("file '{}'", p.to_string_lossy().replace('\'', "'\\''")))
-            .collect::<Vec<_>>()
-            .join("\n");
-        std::fs::write(&list_path, list)?;
-        run(
-            &ffmpeg,
-            &[
-                s("-y"), s("-f"), s("concat"), s("-safe"), s("0"),
-                s("-i"), list_path.to_string_lossy().into_owned(),
-                s("-c"), s("copy"), payload.output.clone(),
-            ],
-        )?;
+        verify_mp4(&staged)?;
+        std::fs::copy(&staged, &payload.output)?;
+        verify_mp4(&payload.output)?;
         Ok(())
     })();
 
@@ -620,84 +682,32 @@ pub fn export_project(payload: &ExportPayload) -> CoreResult<()> {
     result
 }
 
-fn encode_args(has_audio: bool) -> Vec<String> {
-    let mut a = vec![
-        s("-c:v"),
-        s("libx264"),
-        s("-preset"),
-        s("veryfast"),
-        s("-crf"),
-        s("18"),
-        s("-movflags"),
-        s("+faststart"),
-        s("-pix_fmt"),
-        s("yuv420p"),
-    ];
-    if has_audio {
-        a.extend([s("-c:a"), s("aac"), s("-b:a"), s("192k")]);
-    }
-    a
+fn remux_faststart(ffmpeg: &str, input: &std::path::Path, output: &std::path::Path) -> CoreResult<()> {
+    run(
+        ffmpeg,
+        &[
+            s("-y"),
+            s("-i"),
+            input.to_string_lossy().into_owned(),
+            s("-c"),
+            s("copy"),
+            s("-movflags"),
+            s("+faststart"),
+            output.to_string_lossy().into_owned(),
+        ],
+    )?;
+    Ok(())
 }
 
-/// One ffmpeg process: trim each keep-range, concat, encode once.
-fn export_cuts_one_pass(ffmpeg: &str, payload: &ExportPayload, keep: &[Seg]) -> CoreResult<()> {
-    let has_audio = probe(&payload.input).map(|m| m.has_audio).unwrap_or(true);
-    if keep.len() == 1 {
-        let seg = keep[0];
-        let mut args = vec![
-            s("-y"),
-            s("-ss"),
-            format!("{}", seg.start),
-            s("-to"),
-            format!("{}", seg.end),
-            s("-i"),
-            payload.input.clone(),
-        ];
-        args.extend(encode_args(has_audio));
-        args.push(payload.output.clone());
-        run(ffmpeg, &args)?;
-        return Ok(());
-    }
-
-    let mut fc = String::new();
-    let mut concat = String::new();
-    for (i, seg) in keep.iter().enumerate() {
-        fc.push_str(&format!(
-            "[0:v]trim={s}:{e},setpts=PTS-STARTPTS[v{i}];",
-            s = seg.start,
-            e = seg.end
+fn verify_mp4(path: impl AsRef<std::path::Path>) -> CoreResult<()> {
+    let p = path.as_ref().to_string_lossy().into_owned();
+    let meta = probe(&p)?;
+    if meta.duration < 0.4 {
+        return Err(CoreError::msg(
+            "export produced an incomplete file (no duration / missing moov). Try Export again.",
         ));
-        concat.push_str(&format!("[v{i}]"));
-        if has_audio {
-            fc.push_str(&format!(
-                "[0:a]atrim={s}:{e},asetpts=PTS-STARTPTS[a{i}];",
-                s = seg.start,
-                e = seg.end
-            ));
-            concat.push_str(&format!("[a{i}]"));
-        }
     }
-    if has_audio {
-        fc.push_str(&format!("{concat}concat=n={}:v=1:a=1[v][a]", keep.len()));
-    } else {
-        fc.push_str(&format!("{concat}concat=n={}:v=1:a=0[v]", keep.len()));
-    }
-
-    let mut args = vec![
-        s("-y"),
-        s("-i"),
-        payload.input.clone(),
-        s("-filter_complex"),
-        fc,
-        s("-map"),
-        s("[v]"),
-    ];
-    if has_audio {
-        args.extend([s("-map"), s("[a]")]);
-    }
-    args.extend(encode_args(has_audio));
-    args.push(payload.output.clone());
-    run(ffmpeg, &args)?;
+    crate::log::line(&format!("export verify ok: {:.1}s {}", meta.duration, p));
     Ok(())
 }
 
