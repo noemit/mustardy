@@ -161,7 +161,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .chip, .ghost, .solid, .tiny, .accept, .reject {
   border: 1px solid var(--line);
   background: transparent;
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 8px 16px;
   font-size: 14px;
   color: var(--fg);
@@ -257,10 +257,10 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .player-wrap {
   position: relative;
   margin: 14px 16px 0;
-  border-radius: 20px;
+  border-radius: 12px;
   overflow: hidden;
   isolation: isolate;
-  clip-path: inset(0 round 20px);
+  clip-path: inset(0 round 12px);
   background: var(--bg-1);
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
@@ -326,7 +326,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .empty-icon {
   width: 84px;
   height: 84px;
-  border-radius: 22px;
+  border-radius: 12px;
   overflow: hidden;
   object-fit: cover;
   display: block;
@@ -402,7 +402,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   height: 54px;
   background: var(--bg-1);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 10px;
   overflow: hidden;
 }
 .track {
@@ -594,7 +594,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   resize: none;
   min-height: 52px;
   max-height: 150px;
-  border-radius: 16px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--field);
   padding: 13px 16px;
@@ -617,7 +617,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .suggest button {
   background: transparent;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 7px 14px;
   color: var(--muted);
   font-size: 13px;
@@ -749,7 +749,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   letter-spacing: 0.05em;
   text-transform: uppercase;
   padding: 2px 9px;
-  border-radius: 999px;
+  border-radius: 6px;
   font-family: "Geist Mono", ui-monospace, monospace;
   border: 1px solid var(--line);
   color: var(--muted);
@@ -783,7 +783,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   width: min(540px, 94vw);
   background: var(--bg-1);
   border: 1px solid var(--line);
-  border-radius: 24px;
+  border-radius: 16px;
   padding: 30px;
   box-shadow: var(--shadow);
 }
@@ -804,7 +804,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .field input, .field select {
   background: var(--field);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 10px;
   padding: 11px 14px;
   font-size: 14.5px;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
@@ -843,7 +843,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   align-items: center;
   gap: 16px;
   padding: 34px 44px;
-  border-radius: 24px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--bg-1) 92%, transparent);
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
@@ -944,7 +944,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   text-align: left;
   border: 1px solid var(--line);
   background: var(--field);
-  border-radius: 16px;
+  border-radius: 10px;
   padding: 13px 16px;
   display: flex;
   flex-direction: column;

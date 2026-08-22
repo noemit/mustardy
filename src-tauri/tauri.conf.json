@@ -16,10 +16,10 @@
         "height": 920,
         "minWidth": 980,
         "minHeight": 700,
-        "decorations": false,
+        "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "backgroundColor": "#16120c"
+        "backgroundColor": "#f4f2ee"
       }
     ],
     "security": {
