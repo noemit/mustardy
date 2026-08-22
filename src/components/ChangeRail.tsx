@@ -333,7 +333,7 @@ function Cards({
         >
           <div className="card-top">
             <span className={`tag ${c.type}`}>{c.type}</span>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>
+            <span className="card-time">
               {formatTime(c.start)}–{formatTime(c.end)}
             </span>
           </div>
@@ -350,7 +350,7 @@ function Cards({
               </button>
             </div>
           )}
-          {c.status !== "pending" && <p style={{ marginTop: 6 }}>{c.status}</p>}
+          {c.status !== "pending" && <p className="card-status">{c.status}</p>}
         </article>
       ))}
     </div>

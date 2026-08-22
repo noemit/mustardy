@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type RefObject } from "react";
 import type { Change, VideoInfo } from "../types";
 import { activeAt, formatTime } from "../lib/edits";
+import appIcon from "../assets/app-icon.png";
 
 type Props = {
   video: VideoInfo | null;
@@ -8,6 +9,8 @@ type Props = {
   current: number;
   playing: boolean;
   changes: Change[];
+  /** Long-running work over the picture (scan / transcribe / package). */
+  loader?: string | null;
   onToggle: () => void;
   onSeek: (t: number) => void;
   onTag: () => void;
@@ -23,6 +26,7 @@ export function VideoStage({
   current,
   playing,
   changes,
+  loader,
   onToggle,
   onSeek,
   onTag,
@@ -100,6 +104,7 @@ export function VideoStage({
 
   const wrapClass = [
     "player-wrap",
+    video ? "has-video" : "",
     live.shake || live.impact ? "fx-shake" : "",
     live.glitch ? "fx-glitch" : "",
     live.spotlight ? "fx-spot" : "",
@@ -144,13 +149,22 @@ export function VideoStage({
           </>
         ) : (
           <div className="empty">
-            <h1>No video</h1>
-            <p>Drop a file or open one. Chat proposes edits. You accept or reject.</p>
+            <img src={appIcon} alt="" className="empty-icon" />
+            <h1>Drop in a video</h1>
+            <p>Chat proposes the edits — silence trims, punch-ins, titles. You accept or reject each one.</p>
             <div className="drop">
               <button className="solid" onClick={onOpen}>
                 Open a video
               </button>
-              <p style={{ marginTop: 12 }}>or drag a file here</p>
+              <p className="drop-or">or drag a file here</p>
+            </div>
+          </div>
+        )}
+        {video && loader && (
+          <div className="stage-loader">
+            <div className="stage-loader-card">
+              <div className="loader-ring" />
+              <span className="loader-label">{loader}</span>
             </div>
           </div>
         )}

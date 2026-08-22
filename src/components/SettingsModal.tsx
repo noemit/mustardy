@@ -32,9 +32,7 @@ export function SettingsModal({ settings, models, kimiSaved, onClose, onSave }: 
           </select>
         </div>
         {draft.provider === "local" && (
-          <p style={{ color: "var(--muted)", fontSize: 13, marginTop: -4 }}>
-            Eyes, Whisper, and SmolLM2 ship inside the app. Nothing else is used.
-          </p>
+          <p className="field-note">Eyes, Whisper, and SmolLM2 ship inside the app. Nothing else is used.</p>
         )}
         {draft.provider === "ollama" && (
           <>
@@ -93,7 +91,7 @@ export function SettingsModal({ settings, models, kimiSaved, onClose, onSave }: 
             onChange={(e) => set("silenceMin", Math.max(0.2, Number(e.target.value) || 0.6))}
           />
         </div>
-        <p style={{ color: "var(--muted)", fontSize: 13, marginTop: -4 }}>
+        <p className="field-note">
           A pause counts only where audio dips ~10 dB below the floor for at least the min length,
           and cuts keep ~0.4 s of air at each edge — quiet speech and soft word endings stay.
         </p>
@@ -107,7 +105,7 @@ export function SettingsModal({ settings, models, kimiSaved, onClose, onSave }: 
             <option value="small.en">small.en — slower, better for cutting words (~466 MB)</option>
           </select>
         </div>
-        <p style={{ color: "var(--muted)", fontSize: 13, marginTop: -4 }}>
+        <p className="field-note">
           small.en downloads on first use. Re-transcribe after switching. For cutting individual
           words from the script, small.en is worth the wait.
         </p>

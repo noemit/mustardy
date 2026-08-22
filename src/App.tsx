@@ -693,6 +693,7 @@ export function App() {
             current={current}
             playing={playing}
             changes={changes}
+            loader={activity}
             onToggle={toggle}
             onSeek={seek}
             onTag={addTag}
