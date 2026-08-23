@@ -961,31 +961,125 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   border-radius: 12px;
   overflow: hidden;
   background: #1a1a1a;
-  color: #fff;
+  color: var(--brand-ink, #fff);
 }
-.thumb-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Fixed internal canvas — everything below is sized in px at 1280×720 and
+   scales down as one image via transform (see ThumbCard). */
+.thumb-inner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: top left;
+}
+.thumb-inner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .thumb-dim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.55)); }
-.thumb-title, .thumb-sub, .thumb-vs-l, .thumb-vs-r {
+.lay-clean .thumb-dim { background: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.18)); }
+.thumb-sub, .thumb-vs-l, .thumb-vs-r {
   position: absolute;
   z-index: 1;
-  padding: 0 6%;
-  text-shadow: 0 2px 0 #000, 0 8px 18px rgba(0,0,0,.45);
+  padding: 0 70px;
+  text-shadow: 0 5px 0 #000, 0 16px 40px rgba(0,0,0,.55);
   line-height: 0.95;
 }
-.lay-center .thumb-title { left: 0; right: 0; top: 38%; text-align: center; font-size: clamp(22px, 4.6vw, 52px); font-weight: 800; text-transform: uppercase; }
-.lay-center .thumb-sub { left: 0; right: 0; top: 22%; text-align: center; font-size: clamp(14px, 2vw, 22px); color: #ffe566; }
-.lay-bottom .thumb-title { left: 0; right: 0; bottom: 14%; text-align: center; font-size: clamp(20px, 4vw, 44px); font-weight: 800; text-transform: uppercase; }
-.lay-bottom .thumb-sub { left: 6%; top: 10%; font-size: 16px; color: #ffe566; }
-.lay-left .thumb-title { left: 0; top: 28%; width: 62%; font-size: clamp(20px, 3.6vw, 40px); font-weight: 800; text-transform: uppercase; }
-.lay-left .thumb-sub { left: 6%; bottom: 12%; background: #ffe566; color: #111; text-shadow: none; padding: 4px 10px; border-radius: 8px; font-size: 14px; }
-.lay-stamp .thumb-title { left: 8%; top: 18%; transform: rotate(-8deg); font-size: clamp(24px, 4.4vw, 48px); font-weight: 800; text-transform: uppercase; color: #ffe566; }
-.lay-stamp .thumb-sub { right: 8%; bottom: 16%; left: auto; font-size: 18px; }
+.thumb-sub {
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 132px;
+  letter-spacing: 2px;
+}
+/* Big 2–4 words, high contrast — must survive a 160px-wide feed slot. */
+.lay-center .thumb-sub { left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; }
+.lay-bottom .thumb-sub { left: 0; right: 0; bottom: 90px; text-align: center; }
+.lay-left .thumb-sub { left: 0; top: 50%; transform: translateY(-50%); width: 62%; }
+.lay-stamp .thumb-sub {
+  left: 60px; right: 60px; top: 50%;
+  transform: translateY(-50%) rotate(-10deg);
+  color: var(--brand-accent, #ffe566);
+  text-align: center;
+  font-size: 116px;
+}
 .lay-vs .thumb-vs-l, .lay-vs .thumb-vs-r {
   top: 0; bottom: 0; width: 50%; display: flex; align-items: center; justify-content: center;
-  text-align: center; font-size: clamp(16px, 2.6vw, 28px); font-weight: 800; text-transform: uppercase;
+  text-align: center; font-size: 84px; font-weight: 800; text-transform: uppercase; padding: 0 36px;
 }
 .lay-vs .thumb-vs-l { left: 0; background: rgba(0,0,0,.45); }
-.lay-vs .thumb-vs-r { right: 0; color: #ffe566; }
+.lay-vs .thumb-vs-r { right: 0; color: var(--brand-accent, #ffe566); }
+
+/* Brand moods — how the type behaves. Colors/font come from the brand. */
+.mood-loud .thumb-sub { font-size: 152px; }
+.mood-loud.lay-center .thumb-sub { transform: translateY(-50%) rotate(-4deg); }
+.mood-loud.lay-bottom .thumb-sub { transform: rotate(-3deg); }
+.mood-loud.lay-left .thumb-sub { transform: translateY(-50%) rotate(-4deg); }
+.mood-crisp .thumb-sub { letter-spacing: -1px; text-shadow: 0 3px 0 rgba(0,0,0,.9), 0 10px 26px rgba(0,0,0,.5); }
+.mood-minimal .thumb-sub { font-size: 64px; letter-spacing: 6px; text-shadow: 0 2px 12px rgba(0,0,0,.8); }
+.mood-minimal .thumb-dim { background: linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.3)); }
+.mood-minimal .lay-stamp .thumb-sub { transform: translateY(-50%); font-size: 58px; }
+.mood-clear .thumb-sub {
+  background: var(--brand-accent, #ffe566);
+  color: #141414;
+  text-shadow: none;
+  padding: 18px 40px;
+  border-radius: 18px;
+  font-size: 96px;
+}
+.mood-clear.lay-center .thumb-sub { left: 90px; right: 90px; }
+.mood-clear.lay-stamp .thumb-sub { transform: translateY(-50%) rotate(-3deg); }
+.mood-playful .thumb-sub { letter-spacing: 3px; text-shadow: 0 6px 0 rgba(0,0,0,.35), 0 18px 44px rgba(0,0,0,.4); }
+.mood-playful.lay-center .thumb-sub { transform: translateY(-50%) rotate(3deg); }
+.mood-playful.lay-stamp .thumb-sub { transform: translateY(-50%) rotate(6deg); }
+.mood-noir .thumb-dim { background: linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.78)); }
+.mood-noir .thumb-sub { font-size: 96px; font-weight: 600; letter-spacing: 10px; text-shadow: 0 4px 24px rgba(0,0,0,.9); }
+.mood-noir .lay-stamp .thumb-sub { transform: translateY(-50%); }
+
+/* Brand style card */
+.brand-card {
+  border: 1px solid var(--line);
+  background: var(--field);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.brand-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.brand-label { font-weight: 600; font-size: 14px; margin-right: 4px; }
+.brand-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.brand-field input[type="color"] {
+  width: 34px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  padding: 1px;
+  cursor: pointer;
+}
+.brand-field select {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font: inherit;
+}
+.brand-spacer { flex: 1; }
+.brand-moods { display: flex; gap: 8px; flex-wrap: wrap; }
+.brand-mood {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.brand-mood.on { border-color: var(--fg); box-shadow: var(--shadow); font-weight: 600; }
 .feed { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 .feed-item { font-family: "Outfit", sans-serif; }
 .feed-thumb { position: relative; border-radius: 10px; overflow: hidden; background: #111; }
