@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost; media-src 'self' asset: http://asset.localhost blob:; img-src 'self' asset: http://asset.localhost blob: data:; connect-src 'self' ipc: http://ipc.localhost https://api.moonshot.ai http://127.0.0.1:11434 http://localhost:11434; style-src 'self' 'unsafe-inline'; font-src 'self'",
+      "csp": "default-src 'self' ipc: http://ipc.localhost; media-src 'self' asset: http://asset.localhost blob:; img-src 'self' asset: http://asset.localhost blob: data:; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; font-src 'self'",
       "assetProtocol": {
         "enable": true,
         "scope": []
@@ -47,6 +47,7 @@
       "binaries/ffprobe"
     ],
     "macOS": {
+      "minimumSystemVersion": "11.0",
       "signingIdentity": "Developer ID Application: Noemi Titarenco (CT5KSA99W8)"
     },
     "linux": {

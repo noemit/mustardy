@@ -1,8 +1,6 @@
-import type { Caption } from "./vision";
 import type { Settings, VideoInfo } from "../types";
 import {
   envelopeFromSamples,
-  silencesFromEnvelope,
   DEFAULT_SILENCE_DROP,
   DEFAULT_SILENCE_MIN,
   type AudioEnvelope,
@@ -27,13 +25,6 @@ async function dialog() {
   return import("@tauri-apps/plugin-dialog");
 }
 
-export type EngineEvent = {
-  engine: "eyes" | "brain" | "ears" | "models";
-  state: "idle" | "downloading" | "loading" | "ready" | "error";
-  progress: number;
-  label: string;
-};
-
 export type ExportProgress = {
   progress: number;
   label: string;
@@ -46,103 +37,10 @@ export async function onExportProgress(cb: (p: ExportProgress) => void) {
   return () => un();
 }
 
-export async function onEngineStatus(cb: (e: EngineEvent) => void) {
-  if (!native) return () => {};
-  const { listen } = await import("@tauri-apps/api/event");
-  const un = await listen<EngineEvent>("engine-status", (ev) => cb(ev.payload));
-  return () => un();
-}
-
 /** Append one line to the shared mustardy.log (fire-and-forget). */
 export function logUi(text: string) {
   if (!native) return;
   void api().then(({ invoke }) => invoke("log_line", { line: text })).catch(() => {});
-}
-
-export type ModelStatus = {
-  id: string;
-  file: string;
-  present: boolean;
-  bytes: number;
-  path: string | null;
-};
-
-export async function modelStatus(): Promise<ModelStatus[]> {
-  if (!native) return [];
-  const { invoke } = await api();
-  return invoke<ModelStatus[]>("model_status");
-}
-
-let downloading: Promise<void> | null = null;
-
-/** Ensure the GGUF/ggml model files exist; downloads them once if missing. */
-export function ensureModels(): Promise<void> {
-  if (!native) return Promise.resolve();
-  if (!downloading) {
-    downloading = (async () => {
-      const { invoke } = await api();
-      const missing = (await modelStatus()).filter((m) => !m.present);
-      if (missing.length) await invoke("download_models");
-    })().finally(() => {
-      downloading = null;
-    });
-  }
-  return downloading;
-}
-
-export async function warmEngine(engine: "eyes" | "brain" | "ears") {
-  if (!native) throw new Error("Native engines need the desktop app.");
-  await ensureModels();
-  const { invoke } = await api();
-  await invoke("warm_engine", { engine });
-}
-
-export async function captionFramesNative(
-  frames: Array<{ t: number; dataUrl: string }>,
-  maxTokens = 32
-): Promise<Caption[]> {
-  const { invoke } = await api();
-  const payload = frames.map((f) => ({
-    t: f.t,
-    data: f.dataUrl.slice(f.dataUrl.indexOf(",") + 1),
-  }));
-  return invoke<Caption[]>("caption_frames", { frames: payload, maxTokens });
-}
-
-export async function brainPlan(
-  system: string,
-  user: string,
-  maxTokens = 420,
-  attempts = 3,
-  refine?: { path: string; silences: Array<[number, number]> }
-): Promise<string | null> {
-  const { invoke } = await api();
-  return invoke<string | null>("brain_plan", {
-    system,
-    user,
-    maxTokens,
-    attempts,
-    path: refine?.path ?? null,
-    silences: refine?.silences ?? null,
-  });
-}
-
-export async function transcribeNative(path: string, model?: string) {
-  const { invoke } = await api();
-  return invoke<{ text: string; words: Array<{ t: number; end: number; text: string }> }>(
-    "transcribe",
-    { path, model: model ?? null }
-  );
-}
-
-export async function pickVideo(): Promise<VideoInfo | null> {
-  const picked = await pickOpenPath({
-    title: "Open video",
-    filters: [{ name: "Video", extensions: ["mp4", "mov", "mkv", "webm", "m4v", "avi"] }],
-    accept: "video/*",
-  });
-  if (!picked) return null;
-  return loadVideoAt(picked);
 }
 
 export async function pickOpen(): Promise<
@@ -233,15 +131,6 @@ export async function loadAudioEnvelope(video: VideoInfo): Promise<AudioEnvelope
   return envelopeFromUrl(video.url);
 }
 
-export async function detectSilence(
-  video: VideoInfo,
-  opts?: { noise?: string; duration?: number }
-) {
-  const env = await loadAudioEnvelope(video);
-  if (!env) return [];
-  return silencesFromEnvelope(env, DEFAULT_SILENCE_DROP, opts?.duration ?? DEFAULT_SILENCE_MIN);
-}
-
 /** Per silence range, the times where the picture changes mid-pause
  * (pixel-diff scan in the core; aligned with the input ranges). */
 export async function visualChangeTimes(
@@ -305,78 +194,9 @@ export async function reveal(filePath: string) {
   await revealItemInDir(filePath);
 }
 
-export async function chat(payload: Record<string, unknown>) {
-  if (native) {
-    const { invoke } = await api();
-    return invoke<{ text: string; provider: string; model: string }>("chat_ai", {
-      provider: payload.provider,
-      settings: payload.settings,
-      messages: payload.messages,
-      system: payload.system,
-    });
-  }
-  const settings = (payload.settings || {}) as Settings;
-  const provider = payload.provider as string;
-  if (provider === "kimi" || provider === "local") {
-    throw new Error("Kimi calls run from the desktop app so the API key stays off the page.");
-  }
-  const url = `${String(settings.ollamaUrl || "http://127.0.0.1:11434").replace(/\/$/, "")}/api/chat`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: settings.qwenModel || "qwen2.5:7b",
-      stream: false,
-      format: "json",
-      messages: [
-        { role: "system", content: payload.system },
-        ...((payload.messages as Array<{ role: string; content: string }>) || []),
-      ],
-      options: { temperature: 0.4 },
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(
-      res.status === 404
-        ? `Ollama is missing ${settings.qwenModel}. Run ollama pull ${settings.qwenModel || "qwen2.5:7b"}`
-        : await res.text()
-    );
-  }
-  const data = await res.json();
-  return { text: data.message?.content || "", provider: "qwen", model: settings.qwenModel };
-}
-
-export async function listModels(payload: { provider: string; settings: Settings }) {
-  if (native) {
-    const { invoke } = await api();
-    return invoke<{ models: string[]; online: boolean }>("list_ai_models", {
-      provider: payload.provider,
-      settings: payload.settings,
-    });
-  }
-  try {
-    const res = await fetch(
-      `${String(payload.settings.ollamaUrl || "http://127.0.0.1:11434").replace(/\/$/, "")}/api/tags`
-    );
-    if (!res.ok) return { models: [], online: false };
-    const data = await res.json();
-    return { models: (data.models || []).map((m: { name: string }) => m.name), online: true };
-  } catch {
-    return { models: [], online: false };
-  }
-}
-
 export async function loadSettings(): Promise<Settings> {
   const stored = JSON.parse(localStorage.getItem("mustardy-settings") || "{}");
-  const legacy = stored.provider === "qwen" ? "local" : stored.provider;
   return {
-    provider: legacy || "local",
-    ollamaUrl: stored.ollamaUrl || "http://127.0.0.1:11434",
-    qwenModel: stored.qwenModel || "qwen2.5:7b",
-    kimiKey: stored.kimiKey || "",
-    kimiBaseUrl: stored.kimiBaseUrl || "https://api.moonshot.ai/v1",
-    kimiModel: stored.kimiModel || "moonshot-v1-32k-vision-preview",
-    silenceNoise: stored.silenceNoise || "-30dB",
     silenceMin: stored.silenceMin ?? DEFAULT_SILENCE_MIN,
     silenceDrop:
       typeof stored.silenceDrop === "number" && Number.isFinite(stored.silenceDrop)
@@ -387,30 +207,10 @@ export async function loadSettings(): Promise<Settings> {
       typeof stored.normalizeAmount === "number" && Number.isFinite(stored.normalizeAmount)
         ? Math.min(1, Math.max(0, stored.normalizeAmount))
         : 0.7,
-    whisperModel: stored.whisperModel === "small.en" ? "small.en" : "tiny.en",
     theme: stored.theme === "dark" ? "dark" : "light",
   };
 }
 
 export async function saveSettings(next: Settings) {
-  // The API key is persisted by the desktop app (app-data dir), never here —
-  // localStorage is readable by anything that ever runs in the webview.
-  const { kimiKey: _dropped, ...persisted } = next;
-  void _dropped;
-  localStorage.setItem("mustardy-settings", JSON.stringify(persisted));
-}
-
-/** Store the Kimi key in the desktop-side secret store. The webview only
- * holds a freshly typed key in memory until this call lands. */
-export async function saveKimiKey(key: string) {
-  if (!native) return;
-  const { invoke } = await api();
-  await invoke("save_kimi_key", { key });
-}
-
-/** Whether the desktop side already has a Kimi key on file. */
-export async function kimiKeySaved(): Promise<boolean> {
-  if (!native) return false;
-  const { invoke } = await api();
-  return invoke<boolean>("kimi_key_saved");
+  localStorage.setItem("mustardy-settings", JSON.stringify(next));
 }

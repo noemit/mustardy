@@ -1,7 +1,7 @@
 {
   "name": "mustardy-video-editor",
   "version": "0.1.0",
-  "description": "Agentic video editor — trim silence, pan, overlay. Native local models via llama.cpp/whisper.cpp, optional Kimi.",
+  "description": "Video editor that trims the pauses for you. Timeline-first cutting, FFmpeg export, fully offline.",
   "author": "Mustardy",
   "license": "MIT",
   "type": "module",

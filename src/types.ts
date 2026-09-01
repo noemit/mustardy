@@ -1,5 +1,3 @@
-export type Provider = "local" | "kimi" | "ollama";
-
 export type ChangeType =
   | "cut"
   | "overlay"
@@ -54,7 +52,7 @@ export type TranscriptWord = {
 };
 
 /** A user-dropped marker on the timeline. Name is automatic: letter +
- * whole seconds, e.g. "A45". Chat resolves @a45 (case-insensitive). */
+ * whole seconds, e.g. "A45". */
 export type Tag = {
   id: string;
   name: string;
@@ -75,28 +73,11 @@ export type Transcript = {
   source: "whisper" | "none";
 };
 
-export type ChatMessage = {
-  id: string;
-  role: "user" | "assistant" | "system";
-  text: string;
-  changeIds?: string[];
-  icon?: "check";
-  kind?: "divider";
-};
-
 export type Settings = {
-  provider: Provider;
-  ollamaUrl: string;
-  qwenModel: string;
-  kimiKey: string;
-  kimiBaseUrl: string;
-  kimiModel: string;
-  silenceNoise: string;
   silenceMin: number;
   silenceDrop: number;
   normalizeAudio: boolean;
   normalizeAmount: number;
-  whisperModel: "tiny.en" | "small.en";
   theme: "light" | "dark";
 };
 
@@ -107,9 +88,4 @@ export type ProjectFile = {
   transcript: Transcript;
   changes: Change[];
   tags: Tag[];
-};
-
-export type AgentResponse = {
-  message: string;
-  changes: Array<Partial<Change> & { type: ChangeType; start: number; end: number }>;
 };
