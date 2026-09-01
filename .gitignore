@@ -5,8 +5,6 @@ release
 *.log
 .env
 .vite
-models/**
-!models/.gitkeep
 src-tauri/target
 src-tauri/binaries
 src-tauri/gen
