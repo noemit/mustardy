@@ -1,42 +1,54 @@
 # Mustardy
 
-Video editor that trims the pauses for you. Tauri desktop app, fully offline —
-FFmpeg does the work, nothing leaves the machine.
+Mustardy is a video editor that trims the pauses for you. It's a Tauri
+desktop app that runs fully offline. FFmpeg does the work, so nothing
+leaves your machine.
 
-Opening a video runs an audio silence scan plus a cheap visual-change check,
-and applies the trims immediately:
+## How it works
 
-- Silence is measured from the audio itself (RMS windows): only stretches
-  dipping well below the floor count, and cuts keep air at each edge, so
-  quiet speech and soft word endings aren't trimmed. When the fixed floor
-  finds nothing, the scan adapts to the file's own noise floor
-- Each quiet stretch is also checked visually — tiny frames across it are
-  pixel-diffed, and where the picture changes mid-pause the trim splits
-  around the transition: static sides go, the visual change stays
-- Sliders re-threshold the scan live (how quiet counts as a pause, minimum
-  pause length) without re-reading the file
+Open a video and Mustardy runs two scans, then applies the trims right away.
 
-There is no accept/reject step — zoom the timeline with +/−, drag across it
-to add a manual cut, drag a cut to move or resize it, and press Delete (or
-the cut tooltip) to remove one.
+It measures silence from the audio itself using RMS windows. Only stretches
+that dip well below the floor get cut. Each cut keeps some air at the edges,
+so quiet speech and soft word endings stay. When the fixed floor finds
+nothing, the scan adapts to the file's own noise floor (see
+`src-tauri/core/src/ffmpeg.rs`).
 
-**Projects:** Save writes a `.mustardy.json` next to (or wherever you pick)
-the video — silences, tags, and queued edits. Open accepts that file and
-reloads without re-scanning.
+Each quiet stretch is also checked visually. Small frames across the gap are
+pixel-diffed. If the picture changes mid-pause, the trim splits around the
+transition. The static parts go, the visual change stays.
 
-**Timeline tags**: press `T` (or the `tag` button) to mark the playhead. Tags
-auto-name `A45`, `B34`, … (letter + whole seconds). Click a tag to seek;
-right-click to remove.
+Sliders re-threshold the scan live. You can change how quiet counts as a
+pause and the minimum pause length without re-reading the file.
 
-**Export** bakes the kept segments with FFmpeg, with optional podcast-style
-audio normalization.
+There's no accept/reject step. Zoom the timeline with +/−. Drag across it to
+add a manual cut, drag a cut to move or resize it, and press Delete (or the
+cut tooltip) to remove one.
 
-Runs on macOS (Apple Silicon) and Linux.
+## Projects
+
+Save writes a `.mustardy.json` next to the video, or wherever you pick. It
+stores silences, tags, and queued edits. Open accepts that file and reloads
+without re-scanning.
+
+## Timeline tags
+
+Press `T` or the `tag` button to mark the playhead. Tags auto-name like
+`A45`, `B34` (a letter plus the whole seconds). Click a tag to seek.
+Right-click to remove.
+
+## Export
+
+Export bakes the kept segments with FFmpeg. You can add podcast-style audio
+normalization.
+
+Mustardy runs on macOS (Apple Silicon) and Linux.
 
 ## Develop
 
-Prerequisites: Node, plus a Rust toolchain (`curl https://sh.rustup.rs -sSf | sh`;
-on Debian/Ubuntu also `sudo apt install build-essential libwebkit2gtk-4.1-dev`).
+You'll need Node and a Rust toolchain. Install Rust with
+`curl https://sh.rustup.rs -sSf | sh`. On Debian or Ubuntu also run
+`sudo apt install build-essential libwebkit2gtk-4.1-dev`.
 
 ```bash
 npm install
@@ -44,13 +56,14 @@ npm run prep        # stages ffmpeg/ffprobe sidecars into src-tauri/binaries
 npm run dev         # vite + tauri
 ```
 
-`npm run dev:ui` still gives you the plain-web UI (no native sidecars there).
+`npm run dev:ui` still gives you the plain-web UI without the native
+sidecars.
 
 ## Logs
 
-Everything the core does is appended to `mustardy.log` in the repo root
-(timestamped; stderr keeps a copy too; truncated past 2 MB). Override the
-path with `MUSTARDY_LOG=/some/file.log`.
+Everything the core does is appended to `mustardy.log` in the repo root.
+Lines are timestamped, and stderr keeps a copy too. The file is truncated past
+2 MB. Override the path with `MUSTARDY_LOG=/some/file.log`.
 
 ## Package
 
@@ -59,15 +72,15 @@ npm run pack:mac    # or pack:linux
 ```
 
 macOS builds are signed with the Developer ID in
-`src-tauri/tauri.conf.json`; set `APPLE_ID`, `APPLE_PASSWORD` (app-specific),
-and `APPLE_TEAM_ID` to also notarize.
+`src-tauri/tauri.conf.json`. Set `APPLE_ID`, `APPLE_PASSWORD`
+(app-specific), and `APPLE_TEAM_ID` to also notarize.
 
 ## Layout
 
 - `src/` — React UI (video stage, timeline)
-- `src-tauri/` — Tauri shell (`src/main.rs`, commands + events only)
-- `src-tauri/core/` — `mustardy-core`: ffmpeg probe / audio-envelope scan /
-  visual-change check / export. No Tauri deps; builds headlessly:
+- `src-tauri/` — Tauri shell (`src/main.rs`, commands and events only)
+- `src-tauri/core/` — `mustardy-core`: ffmpeg probe, audio-envelope scan,
+  visual-change check, and export. No Tauri deps, so it builds headlessly:
   `cargo build -p mustardy-core`
 - `scripts/prep.mjs` — sidecar staging
 
