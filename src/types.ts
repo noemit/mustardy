@@ -29,6 +29,7 @@ export type Change = {
   status: ChangeStatus;
   label: string;
   rationale: string;
+  origin?: "silence" | "manual";
   text?: string;
   style?: OverlayStyle;
   pan?: { kind: PanKind };
@@ -92,6 +93,9 @@ export type Settings = {
   kimiModel: string;
   silenceNoise: string;
   silenceMin: number;
+  silenceDrop: number;
+  normalizeAudio: boolean;
+  normalizeAmount: number;
   whisperModel: "tiny.en" | "small.en";
   theme: "light" | "dark";
 };

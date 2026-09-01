@@ -23,7 +23,11 @@ actually needs it:
   the fixed floor finds nothing, the scan adapts to the file's own noise
   floor. Each quiet stretch is also checked visually — tiny frames across it
   are pixel-diffed (no model), and where the picture changes mid-pause the
-  trim splits around the transition: static sides go, the visual change stays
+  trim splits around the transition: static sides go, the visual change stays.
+  Opening a video applies those silence trims immediately; drag across the
+  timeline to add a manual cut. There is no accept/reject step — zoom the
+  timeline with +/−, drag a cut to move or resize it, and press Delete (or the
+  cut tooltip) to remove one.
 
 Deterministic requests never touch a model: "trim silences", "trim everything
 after 17:07", "trim after I say thanks for watching", "cut filler words".

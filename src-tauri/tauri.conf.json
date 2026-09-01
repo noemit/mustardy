@@ -46,7 +46,9 @@
       "binaries/ffmpeg",
       "binaries/ffprobe"
     ],
-    "macOS": {},
+    "macOS": {
+      "signingIdentity": "Developer ID Application: Noemi Titarenco (CT5KSA99W8)"
+    },
     "linux": {
       "deb": {
         "depends": []

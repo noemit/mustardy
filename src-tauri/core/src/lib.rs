@@ -33,6 +33,13 @@ pub struct SilenceRange {
     pub end: f64,
 }
 
+/// RMS windows in dBFS. The UI re-thresholds this as the user drags sliders.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioEnvelope {
+    pub hop: f64,
+    pub dbs: Vec<f32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Caption {
     pub t: f64,
@@ -84,12 +91,27 @@ pub struct Pan {
     pub kind: String,
 }
 
+fn default_normalize_amount() -> f64 {
+    0.7
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportPayload {
     pub input: String,
     pub duration: f64,
     pub changes: Vec<Change>,
     pub output: String,
+    #[serde(default)]
+    pub normalize: bool,
+    #[serde(default = "default_normalize_amount", rename = "normalizeAmount")]
+    pub normalize_amount: f64,
+}
+
+/// FFmpeg export progress, streamed to the frontend as `export-progress`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportProgress {
+    pub progress: u32,
+    pub label: String,
 }
 
 /// Progress / status for an engine, streamed to the frontend as events.

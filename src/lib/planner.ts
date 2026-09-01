@@ -165,7 +165,7 @@ export function describePlan(changes: Change[], scene = "") {
   const counts = new Map<string, number>();
   for (const c of changes) counts.set(c.type, (counts.get(c.type) || 0) + 1);
   const bits = [...counts.entries()].map(([k, n]) => `${n} ${k}${n === 1 ? "" : "s"}`);
-  const lead = `Queued ${bits.join(", ")}. Accept or reject each one.`;
+  const lead = `Queued ${bits.join(", ")}.`;
   return scene ? `${lead}\n\nI see: ${scene}` : lead;
 }
 

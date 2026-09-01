@@ -8,12 +8,16 @@ use mustardy_core::ai::{self, AiSettings};
 use mustardy_core::ffmpeg;
 use mustardy_core::models::{self, ModelStatus};
 use mustardy_core::{brain, ears, eyes, visual};
-use mustardy_core::{Caption, ChatMessage, EngineStatus, ExportPayload, SilenceRange, Transcript, VideoMeta};
+use mustardy_core::{AudioEnvelope, Caption, ChatMessage, EngineStatus, ExportPayload, ExportProgress, SilenceRange, Transcript, VideoMeta};
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 fn emit_status(app: &AppHandle, s: EngineStatus) {
     let _ = app.emit("engine-status", s);
+}
+
+fn emit_export(app: &AppHandle, p: ExportProgress) {
+    let _ = app.emit("export-progress", p);
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -50,6 +54,13 @@ async fn detect_silence(path: String, noise: Option<String>, duration: Option<f6
         .map_err(err)?
 }
 
+#[tauri::command]
+async fn audio_envelope(path: String) -> Result<AudioEnvelope, String> {
+    tauri::async_runtime::spawn_blocking(move || ffmpeg::audio_envelope(&path).map_err(err))
+        .await
+        .map_err(err)?
+}
+
 /// Per silence range, the times where the picture changes mid-pause — the
 /// frontend trims around those points instead of through them.
 #[tauri::command]
@@ -60,10 +71,12 @@ async fn visual_change_times(path: String, ranges: Vec<SilenceRange>) -> Result<
 }
 
 #[tauri::command]
-async fn export_project(payload: ExportPayload) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || ffmpeg::export_project(&payload).map_err(err))
-        .await
-        .map_err(err)?
+async fn export_project(app: AppHandle, payload: ExportPayload) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        ffmpeg::export_project(&payload, |p| emit_export(&app, p)).map_err(err)
+    })
+    .await
+    .map_err(err)?
 }
 
 #[tauri::command]
@@ -272,6 +285,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             probe,
             detect_silence,
+            audio_envelope,
             visual_change_times,
             export_project,
             chat_ai,

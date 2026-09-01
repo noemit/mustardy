@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::{Change, CoreError, CoreResult, ExportPayload, SilenceRange, VideoMeta};
+use crate::{AudioEnvelope, Change, CoreError, CoreResult, ExportPayload, ExportProgress, SilenceRange, VideoMeta};
 
 const TRIPLE: &str = {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -241,7 +241,7 @@ fn eval_frac(v: &str) -> f64 {
 pub fn detect_silence(file_path: &str, noise: Option<&str>, duration: Option<f64>) -> CoreResult<Vec<SilenceRange>> {
     let pcm = extract_pcm_16k(file_path)?;
     let user_db = noise.and_then(parse_db).unwrap_or(-30.0);
-    let min_dur = duration.unwrap_or(0.6).max(0.2);
+    let min_dur = duration.unwrap_or(0.6).max(0.02);
     let ranges = silence_from_pcm(&pcm, 16000, user_db, min_dur);
     crate::log::line(&format!(
         "silence scan ({} dB, min {min_dur}s) of {}: {} range(s): {:?}",
@@ -254,6 +254,31 @@ pub fn detect_silence(file_path: &str, noise: Option<&str>, duration: Option<f64
         ranges.iter().map(|r| (r.start, r.end)).collect::<Vec<_>>()
     ));
     Ok(ranges)
+}
+
+/// Decode once to 20 ms RMS windows. The UI slides floor / min-length over this.
+pub fn audio_envelope(file_path: &str) -> CoreResult<AudioEnvelope> {
+    let pcm = extract_pcm_16k(file_path)?;
+    const SR: usize = 16000;
+    let win = (SR / 50).max(1); // 20 ms
+    let hop = win as f64 / SR as f64;
+    let dbs: Vec<f32> = pcm
+        .chunks(win)
+        .map(|c| {
+            let rms = (c.iter().map(|&x| (x as f64) * (x as f64)).sum::<f64>() / c.len() as f64).sqrt();
+            (20.0 * rms.max(1e-9).log10()) as f32
+        })
+        .collect();
+    crate::log::line(&format!(
+        "audio envelope: {} windows ({:.0} ms) of {}",
+        dbs.len(),
+        hop * 1000.0,
+        Path::new(file_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| file_path.to_string()),
+    ));
+    Ok(AudioEnvelope { hop, dbs })
 }
 
 fn parse_db(s: &str) -> Option<f64> {
@@ -384,7 +409,7 @@ pub fn invert_cuts(duration: f64, cuts: &[Change]) -> Vec<Seg> {
     let mut sorted: Vec<Seg> = cuts
         .iter()
         .map(|c| Seg { start: c.start.max(0.0), end: c.end.min(duration) })
-        .filter(|c| c.end - c.start > 0.04)
+        .filter(|c| c.end - c.start > 0.01)
         .collect();
     sorted.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -533,12 +558,28 @@ fn textcard_filters(c: &Change, font: &str) -> Vec<String> {
     ]
 }
 
-pub fn export_project(payload: &ExportPayload) -> CoreResult<()> {
+pub fn export_project<F>(payload: &ExportPayload, progress: F) -> CoreResult<()>
+where
+    F: FnMut(ExportProgress),
+{
+    let mut progress = progress;
+    let mut last_log_bucket: i32 = -1;
+    let mut report = |pct: u32, label: String| {
+        let pct = pct.min(100);
+        progress(ExportProgress { progress: pct, label: label.clone() });
+        let bucket = (pct / 5) * 5;
+        if pct == 0 || pct == 100 || bucket as i32 != last_log_bucket {
+            last_log_bucket = bucket as i32;
+            crate::log::line(&format!("export: {pct}% — {label}"));
+        }
+    };
+
     crate::log::line(&format!(
         "export: {} → {} ({} change(s))",
         payload.input, payload.output,
         payload.changes.iter().filter(|c| c.status == "accepted").count()
     ));
+    report(0, "Preparing export".into());
     let t0 = std::time::Instant::now();
     let accepted: Vec<&Change> = payload.changes.iter().filter(|c| c.status == "accepted").collect();
     let cuts: Vec<Change> = accepted.iter().filter(|c| c.kind == "cut").map(|c| (*c).clone()).collect();
@@ -557,6 +598,26 @@ pub fn export_project(payload: &ExportPayload) -> CoreResult<()> {
         .map(|c| (*c).clone())
         .collect();
 
+    if cuts.is_empty() && overlays.is_empty() && pans.is_empty() && fx.is_empty() {
+        if !payload.normalize {
+            return Err(CoreError::msg(
+                "Nothing to export — add a cut or turn on volume normalize.",
+            ));
+        }
+        crate::log::line("export: normalize only (copy video, re-encode audio)");
+        report(88, "Normalizing audio".into());
+        apply_podcast_norm(
+            &resolve_bin("ffmpeg"),
+            Path::new(&payload.input),
+            Path::new(&payload.output),
+            payload.normalize_amount,
+        )?;
+        verify_mp4(&payload.output)?;
+        report(100, "Export done".into());
+        crate::log::line(&format!("export done in {:.1?}", t0.elapsed()));
+        return Ok(());
+    }
+
     let mut keep = invert_cuts(payload.duration, &cuts);
     keep.retain(|s| s.end - s.start >= 0.08);
     if keep.is_empty() {
@@ -566,6 +627,7 @@ pub fn export_project(payload: &ExportPayload) -> CoreResult<()> {
     let ffmpeg = resolve_bin("ffmpeg");
     let fps = probe(&payload.input).map(|m| if m.fps > 1.0 { m.fps } else { 30.0 }).unwrap_or(30.0);
     crate::log::line(&format!("export: {} keep-segment(s) @ {:.2} fps", keep.len(), fps));
+    report(5, format!("Exporting {} keep-segment(s) @ {:.2} fps", keep.len(), fps));
 
     let font = pick_font();
     let tmp = std::env::temp_dir().join(format!("mustardy-{}", std::process::id()));
@@ -643,8 +705,11 @@ pub fn export_project(payload: &ExportPayload) -> CoreResult<()> {
             ]);
             run(&ffmpeg, &args)?;
             parts.push(seg_path);
+            let pct = 5 + (((i + 1) as f64 / keep.len().max(1) as f64) * 85.0).round() as u32;
+            report(pct, format!("Encoded segment {}/{}", i + 1, keep.len()));
         }
 
+        report(92, "Joining segments".into());
         let staged = tmp.join("out.mp4");
         if parts.len() == 1 {
             remux_faststart(&ffmpeg, &parts[0], &staged)?;
@@ -669,8 +734,18 @@ pub fn export_project(payload: &ExportPayload) -> CoreResult<()> {
             remux_faststart(&ffmpeg, &joined, &staged)?;
         }
         verify_mp4(&staged)?;
-        std::fs::copy(&staged, &payload.output)?;
+        report(96, "Finalizing MP4".into());
+        if payload.normalize {
+            report(98, "Normalizing audio".into());
+            let normed = tmp.join("norm.mp4");
+            apply_podcast_norm(&ffmpeg, &staged, &normed, payload.normalize_amount)?;
+            verify_mp4(&normed)?;
+            std::fs::copy(&normed, &payload.output)?;
+        } else {
+            std::fs::copy(&staged, &payload.output)?;
+        }
         verify_mp4(&payload.output)?;
+        report(100, "Export done".into());
         Ok(())
     })();
 
@@ -680,6 +755,46 @@ pub fn export_project(payload: &ExportPayload) -> CoreResult<()> {
         Err(e) => crate::log::line(&format!("export failed: {e}")),
     }
     result
+}
+
+/// Podcast evenness: high-pass rumble, dynaudnorm to lift far-from-mic speech
+/// (capped so noise doesn't roar), then loudnorm to −16 LUFS with a tight LRA
+/// so the file doesn't keep huge level swings.
+fn podcast_af(amount: f64) -> String {
+    let a = amount.clamp(0.0, 1.0);
+    let maxgain = 5.0 + a * 11.0; // linear factor ≈ 14–24 dB
+    let compress = 4.0 + a * 8.0;
+    let lra = 9.0 - a * 4.0; // 9 … 5 LU
+    format!(
+        "highpass=f=80,dynaudnorm=f=180:g=17:p=0.93:m={maxgain:.1}:r=0.16:s={compress:.1},loudnorm=I=-16:TP=-1.5:LRA={lra:.1}"
+    )
+}
+
+fn apply_podcast_norm(ffmpeg: &str, input: &Path, output: &Path, amount: f64) -> CoreResult<()> {
+    let af = podcast_af(amount);
+    crate::log::line(&format!("podcast norm: {af}"));
+    run(
+        ffmpeg,
+        &[
+            s("-y"),
+            s("-i"),
+            input.to_string_lossy().into_owned(),
+            s("-c:v"),
+            s("copy"),
+            s("-af"),
+            af,
+            s("-c:a"),
+            s("aac"),
+            s("-b:a"),
+            s("192k"),
+            s("-ar"),
+            s("48000"),
+            s("-movflags"),
+            s("+faststart"),
+            output.to_string_lossy().into_owned(),
+        ],
+    )?;
+    Ok(())
 }
 
 fn remux_faststart(ffmpeg: &str, input: &std::path::Path, output: &std::path::Path) -> CoreResult<()> {

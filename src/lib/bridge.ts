@@ -1,5 +1,12 @@
 import type { Caption } from "./vision";
 import type { Settings, VideoInfo } from "../types";
+import {
+  envelopeFromSamples,
+  silencesFromEnvelope,
+  DEFAULT_SILENCE_DROP,
+  DEFAULT_SILENCE_MIN,
+  type AudioEnvelope,
+} from "./silence";
 
 // Tauri v2 detection (works without the global flag).
 export const native =
@@ -26,6 +33,18 @@ export type EngineEvent = {
   progress: number;
   label: string;
 };
+
+export type ExportProgress = {
+  progress: number;
+  label: string;
+};
+
+export async function onExportProgress(cb: (p: ExportProgress) => void) {
+  if (!native) return () => {};
+  const { listen } = await import("@tauri-apps/api/event");
+  const un = await listen<ExportProgress>("export-progress", (ev) => cb(ev.payload));
+  return () => un();
+}
 
 export async function onEngineStatus(cb: (e: EngineEvent) => void) {
   if (!native) return () => {};
@@ -202,19 +221,25 @@ export async function quitApp() {
   await getCurrentWindow().close();
 }
 
+export async function loadAudioEnvelope(video: VideoInfo): Promise<AudioEnvelope | null> {
+  if (native && video.path.startsWith("/")) {
+    try {
+      const { invoke } = await api();
+      return await invoke<AudioEnvelope>("audio_envelope", { path: video.path });
+    } catch (e) {
+      logUi(`audio envelope failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return envelopeFromUrl(video.url);
+}
+
 export async function detectSilence(
   video: VideoInfo,
   opts?: { noise?: string; duration?: number }
 ) {
-  if (native && video.path.startsWith("/")) {
-    const { invoke } = await api();
-    return invoke<Array<{ start: number; end: number }>>("detect_silence", {
-      path: video.path,
-      noise: opts?.noise,
-      duration: opts?.duration,
-    });
-  }
-  return detectSilenceWeb(video.url, opts?.duration ?? 0.45);
+  const env = await loadAudioEnvelope(video);
+  if (!env) return [];
+  return silencesFromEnvelope(env, DEFAULT_SILENCE_DROP, opts?.duration ?? DEFAULT_SILENCE_MIN);
 }
 
 /** Per silence range, the times where the picture changes mid-pause
@@ -227,7 +252,7 @@ export async function visualChangeTimes(
   return invoke<number[][]>("visual_change_times", { path, ranges });
 }
 
-async function detectSilenceWeb(url: string, minDur: number) {
+async function envelopeFromUrl(url: string): Promise<AudioEnvelope | null> {
   // Decode straight into a 16 kHz mono context — decodeAudioData resamples
   // to the context rate, so long videos cost ~1/6 the RAM of decoding at the
   // file's own stereo/full rate.
@@ -235,35 +260,16 @@ async function detectSilenceWeb(url: string, minDur: number) {
   try {
     const buf = await (await fetch(url)).arrayBuffer();
     const audio = await ctx.decodeAudioData(buf);
-    const data = audio.getChannelData(0);
-    const sr = audio.sampleRate;
-    const hop = Math.max(1, Math.floor(sr * 0.02));
-    const ranges: Array<{ start: number; end: number }> = [];
-    let start: number | null = null;
-    for (let i = 0; i < data.length; i += hop) {
-      let peak = 0;
-      for (let j = 0; j < hop && i + j < data.length; j++) {
-        const s = Math.abs(data[i + j]);
-        if (s > peak) peak = s;
-      }
-      const t = i / sr;
-      if (peak < 0.012) {
-        if (start == null) start = t;
-      } else if (start != null) {
-        if (t - start >= minDur) ranges.push({ start, end: t });
-        start = null;
-      }
-    }
-    if (start != null && audio.duration - start >= minDur) {
-      ranges.push({ start, end: audio.duration });
-    }
-    return ranges;
+    return envelopeFromSamples(audio.getChannelData(0), audio.sampleRate);
   } catch {
-    return [];
+    return null;
   }
 }
 
-export async function exportProject(payload: Record<string, unknown>) {
+export async function exportProject(
+  payload: Record<string, unknown>,
+  onProgress?: (p: ExportProgress) => void
+) {
   if (!native) {
     throw new Error("Export needs the desktop app so FFmpeg can bake the cut.");
   }
@@ -275,14 +281,21 @@ export async function exportProject(payload: Record<string, unknown>) {
   });
   if (!output) return { canceled: true };
   const { invoke } = await api();
-  await invoke("export_project", {
-    payload: {
-      input: payload.input,
-      duration: payload.duration,
-      changes: payload.changes,
-      output,
-    },
-  });
+  const unProgress = onProgress ? await onExportProgress(onProgress) : () => {};
+  try {
+    await invoke("export_project", {
+      payload: {
+        input: payload.input,
+        duration: payload.duration,
+        changes: payload.changes,
+        output,
+        normalize: Boolean(payload.normalize),
+        normalizeAmount: Number(payload.normalizeAmount ?? 0.7),
+      },
+    });
+  } finally {
+    unProgress();
+  }
   return { canceled: false, path: output };
 }
 
@@ -364,7 +377,16 @@ export async function loadSettings(): Promise<Settings> {
     kimiBaseUrl: stored.kimiBaseUrl || "https://api.moonshot.ai/v1",
     kimiModel: stored.kimiModel || "moonshot-v1-32k-vision-preview",
     silenceNoise: stored.silenceNoise || "-30dB",
-    silenceMin: stored.silenceMin ?? 0.6,
+    silenceMin: stored.silenceMin ?? DEFAULT_SILENCE_MIN,
+    silenceDrop:
+      typeof stored.silenceDrop === "number" && Number.isFinite(stored.silenceDrop)
+        ? Math.min(28, Math.max(8, stored.silenceDrop))
+        : DEFAULT_SILENCE_DROP,
+    normalizeAudio: stored.normalizeAudio !== false,
+    normalizeAmount:
+      typeof stored.normalizeAmount === "number" && Number.isFinite(stored.normalizeAmount)
+        ? Math.min(1, Math.max(0, stored.normalizeAmount))
+        : 0.7,
     whisperModel: stored.whisperModel === "small.en" ? "small.en" : "tiny.en",
     theme: stored.theme === "dark" ? "dark" : "light",
   };

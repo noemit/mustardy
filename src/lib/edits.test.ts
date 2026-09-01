@@ -4,6 +4,7 @@ import {
   explicitTimeCuts,
   formatTime,
   invertCuts,
+  manualCut,
   nextTagName,
   sanitizeChanges,
   silenceCuts,
@@ -47,6 +48,14 @@ describe("invertCuts", () => {
     const keep = invertCuts(10, [cut(2, 8, "rejected")]);
     expect(keep).toEqual([{ start: 0, end: 10 }]);
   });
+
+  it("can include pending cuts for preview", () => {
+    const keep = invertCuts(20, [cut(5, 8, "pending")], true);
+    expect(keep).toEqual([
+      { start: 0, end: 5 },
+      { start: 8, end: 20 },
+    ]);
+  });
 });
 
 describe("silenceCuts", () => {
@@ -66,8 +75,25 @@ describe("silenceCuts", () => {
     expect(cuts[1].rationale).toContain("the picture changes");
   });
 
-  it("drops slivers shorter than 0.4s", () => {
-    expect(silenceCuts([{ start: 5, end: 5.5 }])).toHaveLength(0);
+  it("keeps pauses shorter than 0.1s", () => {
+    const [c] = silenceCuts([{ start: 5, end: 5.08 }]);
+    expect(c).toBeTruthy();
+    expect(c.end - c.start).toBeGreaterThan(0.02);
+    expect(c.origin).toBe("silence");
+  });
+
+  it("auto-accepts silence trims", () => {
+    expect(silenceCuts([{ start: 10, end: 15 }])[0].status).toBe("accepted");
+  });
+});
+
+describe("manualCut", () => {
+  it("creates an accepted manual cut with a readable label", () => {
+    const c = manualCut(62, 70);
+    expect(c.status).toBe("accepted");
+    expect(c.origin).toBe("manual");
+    expect(c.label).toContain("1:02.0");
+    expect(c.label).toContain("1:10.0");
   });
 });
 
@@ -90,7 +116,7 @@ describe("sanitizeChanges", () => {
     const flash: Change = { ...cut(5, 4), type: "flash" };
     const out = sanitizeChanges([flash], 100);
     expect(out).toHaveLength(1);
-    expect(out[0].end).toBeGreaterThanOrEqual(out[0].start + 0.08);
+    expect(out[0].end).toBeGreaterThan(out[0].start);
   });
 
   it("clamps times into the video", () => {

@@ -13,9 +13,13 @@ export function formatTime(seconds: number) {
   return `${m}:${String(s).padStart(2, "0")}.${f}`;
 }
 
-export function invertCuts(duration: number, cuts: Change[]) {
+export function invertCuts(duration: number, cuts: Change[], includePending = false) {
   const sorted = [...cuts]
-    .filter((c) => c.type === "cut" && c.status === "accepted")
+    .filter(
+      (c) =>
+        c.type === "cut" &&
+        (c.status === "accepted" || (includePending && c.status === "pending"))
+    )
     .map((c) => ({ start: Math.max(0, c.start), end: Math.min(duration, c.end) }))
     .filter((c) => c.end > c.start)
     .sort((a, b) => a.start - b.start);
@@ -34,7 +38,7 @@ export function invertCuts(duration: number, cuts: Change[]) {
     cursor = Math.max(cursor, c.end);
   }
   if (cursor < duration - 0.01) keep.push({ start: cursor, end: duration });
-  return keep;
+  return keep.filter((s) => s.end - s.start >= 0.08);
 }
 
 export function sourceToEdited(sourceTime: number, duration: number, changes: Change[]) {
@@ -59,8 +63,8 @@ export function editedToSource(editedTime: number, duration: number, changes: Ch
   return duration;
 }
 
-export function editedDuration(duration: number, changes: Change[]) {
-  return invertCuts(duration, changes).reduce((n, s) => n + (s.end - s.start), 0);
+export function editedDuration(duration: number, changes: Change[], includePending = false) {
+  return invertCuts(duration, changes, includePending).reduce((n, s) => n + (s.end - s.start), 0);
 }
 
 export function skippableCuts(changes: Change[], previewPending: boolean) {
@@ -85,9 +89,14 @@ export function activeAt(t: number, changes: Change[], type?: Change["type"]) {
   );
 }
 
+export function isSilenceTrim(c: Change) {
+  return c.origin === "silence" || (c.type === "cut" && /silence/i.test(c.label));
+}
+
 /** Build silence trims. When a pause hides a visual change (scene cut, slide
  * switch), the trim splits around it: the static sides go, the transition
- * stays — cutting through it is what made silence trims feel jumpy. */
+ * stays — cutting through it is what made silence trims feel jumpy. Pad
+ * shrinks on short pauses so gaps under 0.1s can still be cut. */
 export function silenceCuts(
   ranges: SilenceRange[],
   pad = 0.18,
@@ -95,24 +104,28 @@ export function silenceCuts(
 ): Change[] {
   const out: Change[] = [];
   for (const r of ranges) {
+    const span = r.end - r.start;
+    const edge = Math.min(pad, Math.max(0, (span - 0.02) * 0.3));
     const splits = (r.visual || [])
-      .filter((t) => t > r.start + pad && t < r.end - pad)
+      .filter((t) => t > r.start + edge && t < r.end - edge)
       .sort((a, b) => a - b);
     const bounds = [r.start, ...splits, r.end];
     for (let i = 0; i + 1 < bounds.length; i++) {
-      const start = i === 0 ? bounds[i] + pad : bounds[i] + transitionMargin;
-      const end = i + 1 === bounds.length - 1 ? bounds[i + 1] - pad : bounds[i + 1] - transitionMargin;
+      const start = i === 0 ? bounds[i] + edge : bounds[i] + transitionMargin;
+      const end = i + 1 === bounds.length - 1 ? bounds[i + 1] - edge : bounds[i + 1] - transitionMargin;
       const dur = end - start;
-      if (dur < 0.4) continue;
+      if (dur < 0.02) continue;
+      const durLabel = dur < 1 ? `${dur.toFixed(2)}s` : `${dur.toFixed(1)}s`;
       out.push({
         id: uid("cut"),
         type: "cut" as const,
         start,
         end,
-        status: "pending" as const,
+        status: "accepted" as const,
+        origin: "silence",
         label: splits.length
-          ? `Trim ${dur.toFixed(1)}s silence — kept the visual change at ${splits.map(formatTime).join(", ")}`
-          : `Trim ${dur.toFixed(1)}s silence`,
+          ? `Trim ${durLabel} silence — kept the visual change at ${splits.map(formatTime).join(", ")}`
+          : `Trim ${durLabel} silence`,
         rationale: splits.length
           ? "Dead air, but the picture changes mid-pause — that moment stays."
           : "Dead air — keep a short breath on either side.",
@@ -122,8 +135,23 @@ export function silenceCuts(
   return out;
 }
 
-/** Minimum believable edit span (seconds) — anything shorter is noise. */
-const MIN_SPAN_S = 0.08;
+/** A drag-created timeline cut. Manual cuts are live immediately — there is
+ * no accept step anywhere in the editor. */
+export function manualCut(start: number, end: number): Change {
+  return {
+    id: uid("cut"),
+    type: "cut",
+    start,
+    end,
+    status: "accepted",
+    origin: "manual",
+    label: `Cut ${formatTime(start)}–${formatTime(end)}`,
+    rationale: "Dragged out on the timeline.",
+  };
+}
+
+/** Minimum believable edit span (seconds). Short silence trims go down to 20ms. */
+const MIN_SPAN_S = 0.02;
 
 /** One gate every queued change passes through: times clamped to the video,
  * ordered edges, real span. Degenerate ranges (a zero-length cut at the very
@@ -132,10 +160,13 @@ export function sanitizeChanges(list: Change[], duration: number): Change[] {
   const max = Math.max(0, duration);
   const out: Change[] = [];
   for (const c of list) {
-    const start = clampNum(c.start, 0, Math.max(0, max - MIN_SPAN_S));
+    if (c.type === "cut" && c.end - c.start < MIN_SPAN_S) continue;
+    const start = clampNum(c.start, 0, max);
     let end = clampNum(c.end, 0, max);
-    if (c.type === "cut" && end - start < MIN_SPAN_S) continue;
-    if (end <= start) end = Math.min(max, start + MIN_SPAN_S);
+    if (end <= start) {
+      if (c.type === "cut") continue;
+      end = Math.min(max, start + MIN_SPAN_S);
+    }
     out.push({ ...c, start, end });
   }
   return out;

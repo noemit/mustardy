@@ -55,7 +55,11 @@ If it keeps dying: chunk long audio. Don’t load 20 minutes of f32 + DTW in one
 
 ## Export
 
-Used to re-encode every keep-segment (90 cuts → ~91 x264 jobs → minutes). Cuts-only now one ffmpeg pass: trim + concat + encode once. Overlays/pans/fx still use the old per-segment path.
+Used to re-encode every keep-segment (90 cuts → ~91 x264 jobs → minutes). Cuts-only now one ffmpeg pass: trim + concat + encode once. Overlays/pans/fx still use the old per-segment path. Export emits `export-progress` events (segment encodes → join → faststart → normalize) and logs every 5% so long exports aren't a silent one-liner.
+
+## Preview replay
+
+Preview is two `<video>` elements ping-ponging so a cut never seeks the audible player. The failure mode is standby not being decoded exactly on the cut frame; the old 150 ms "close enough" check made joins smear. Keep edges are now snapped up to the source fps (same frame grid the CFR export lands on), standby readiness requires `HAVE_CURRENT_DATA` within ¾ frame, preroll decodes at 1× so high-speed previews don't overshoot, and a missed preroll hard-seeks after crossing the cut edge instead of playing through the whole gap. Preview audio is native element audio again — the Web Audio compressor path drifted at 1.5×/2×, so Normalize is export-only. HTML media still isn't sample-accurate; if preview needs to be perfect, the next step is WebCodecs/MP4 demuxed frames, not more `<video>` tuning.
 
 ## Projects
 
