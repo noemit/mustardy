@@ -42,26 +42,29 @@ pub fn resolve_bin(name: &str) -> String {
     let env_key = format!("MUSTARDY_{}", name.to_uppercase());
     if let Ok(v) = std::env::var(&env_key) {
         if !v.is_empty() && exists(Path::new(&v)) {
+            crate::log::line(&format!("resolve {name}: env {v}"));
             return v;
         }
     }
     let plain = exe_name(name);
     let tripled = exe_name(&format!("{name}-{TRIPLE}"));
     let mut dirs: Vec<PathBuf> = Vec::new();
+    // Bundled sidecars first — avoids Homebrew dylibs tripping the hardened runtime (macOS).
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    dirs.push(manifest.join("../binaries"));
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             dirs.push(dir.to_path_buf());
             dirs.push(dir.join("binaries"));
         }
     }
-    // dev: <repo>/src-tauri/binaries
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    dirs.push(manifest.join("../binaries"));
     for dir in &dirs {
         for cand in [&tripled, &plain] {
             let p = dir.join(cand);
             if exists(&p) {
-                return p.to_string_lossy().into_owned();
+                let s = p.to_string_lossy().into_owned();
+                crate::log::line(&format!("resolve {name}: {s}"));
+                return s;
             }
         }
     }
@@ -81,9 +84,12 @@ pub fn resolve_bin(name: &str) -> String {
     };
     for p in npm_cands {
         if exists(&p) {
-            return p.to_string_lossy().into_owned();
+            let s = p.to_string_lossy().into_owned();
+            crate::log::line(&format!("resolve {name}: npm {s}"));
+            return s;
         }
     }
+    crate::log::line(&format!("resolve {name}: fallback PATH:{name}"));
     name.to_string() // PATH
 }
 
@@ -102,11 +108,16 @@ fn run(cmd: &str, args: &[String]) -> CoreResult<(String, String)> {
     if out.status.success() {
         Ok((stdout, stderr))
     } else {
-        Err(CoreError::msg(if stderr.trim().is_empty() {
+        let mut msg = if stderr.trim().is_empty() {
             format!("{cmd} exited {}", out.status)
         } else {
             ffmpeg_error_line(&stderr)
-        }))
+        };
+        // Hardened-runtime dylib failure on macOS (Homebrew ffmpeg) — hint bundled binary.
+        if msg.contains("code signature") || msg.contains("libavdevice") || msg.contains("mapped file") {
+            msg = format!("{msg} — use bundled ffmpeg/ffprobe (check src-tauri/binaries/)");
+        }
+        Err(CoreError::msg(msg))
     }
 }
 

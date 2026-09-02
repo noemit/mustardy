@@ -58,7 +58,8 @@ export async function pickOpen(): Promise<
     return { type: "project", path: picked };
   }
   const video = await loadVideoAt(picked);
-  return video ? { type: "video", video } : null;
+  if (!video) throw new Error(`probe failed for ${picked} — ffprobe couldn't read the file`);
+  return { type: "video", video };
 }
 
 async function pickOpenPath(opts: {
@@ -85,10 +86,17 @@ async function pickOpenPath(opts: {
 
 export async function loadVideoAt(path: string): Promise<VideoInfo | null> {
   if (native && path.startsWith("/")) {
-    const { invoke, convertFileSrc } = await api();
-    const meta = await invoke<Omit<VideoInfo, "url" | "path">>("probe", { path });
-    return { ...meta, path, url: convertFileSrc(path) };
+    try {
+      const { invoke, convertFileSrc } = await api();
+      const meta = await invoke<Omit<VideoInfo, "url" | "path">>("probe", { path });
+      return { ...meta, path, url: convertFileSrc(path) };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logUi(`probe failed for ${path}: ${msg}`);
+      throw e;
+    }
   }
+  // Web fallback or non-absolute path: let caller fall back to blob handling.
   return null;
 }
 

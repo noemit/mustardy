@@ -1,6 +1,6 @@
 [package]
 name = "mustardy-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "Mustardy core: ffmpeg probe / silence scan / export"
 authors = ["Mustardy"]
 license = "MIT"

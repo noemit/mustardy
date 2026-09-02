@@ -162,42 +162,63 @@ export function App() {
   }, []);
 
   async function loadFromPicker() {
-    const picked = await pickOpen();
-    if (!picked) return;
-    if (picked.type === "project") {
-      try {
-        await loadProject(picked.path);
-      } catch (e) {
-        setNote(`Couldn't open project (${e instanceof Error ? e.message : String(e)}).`);
+    try {
+      const picked = await pickOpen();
+      if (!picked) return;
+      if (picked.type === "project") {
+        try {
+          await loadProject(picked.path);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setNote(`Couldn't open project (${msg}).`);
+          logUi(`open project failed: ${msg}`);
+        }
+        return;
       }
-      return;
+      await hydrate(picked.video);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setNote(`Couldn't open video (${msg}).`);
+      logUi(`open video failed: ${msg}`);
     }
-    await hydrate(picked.video);
   }
 
   async function loadFile(file: File) {
-    const url = URL.createObjectURL(file);
-    adoptBlobUrl(url);
-    const probeEl = document.createElement("video");
-    probeEl.preload = "metadata";
-    probeEl.src = url;
-    await Promise.race([
-      new Promise<void>((resolve) => {
-        probeEl.onloadedmetadata = () => resolve();
-        probeEl.onerror = () => resolve();
-      }),
-      new Promise<void>((resolve) => setTimeout(resolve, 5000)),
-    ]);
-    await hydrate({
-      path: file.name,
-      url,
-      name: file.name,
-      duration: probeEl.duration || 0,
-      width: probeEl.videoWidth || 0,
-      height: probeEl.videoHeight || 0,
-      fps: 30,
-      hasAudio: true,
-    });
+    try {
+      const url = URL.createObjectURL(file);
+      adoptBlobUrl(url);
+      const probeEl = document.createElement("video");
+      probeEl.preload = "metadata";
+      probeEl.src = url;
+      let loadOk = false;
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          probeEl.onloadedmetadata = () => {
+            loadOk = true;
+            resolve();
+          };
+          probeEl.onerror = () => resolve();
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+      ]);
+      if (!loadOk && (!probeEl.duration || Number.isNaN(probeEl.duration))) {
+        logUi(`drop probe fallback: duration missing for ${file.name} (using 0)`);
+      }
+      await hydrate({
+        path: file.name,
+        url,
+        name: file.name,
+        duration: probeEl.duration || 0,
+        width: probeEl.videoWidth || 0,
+        height: probeEl.videoHeight || 0,
+        fps: 30,
+        hasAudio: true,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setNote(`Couldn't open dropped file (${msg}).`);
+      logUi(`drop failed: ${msg}`);
+    }
   }
 
   function applySilenceCuts(ranges: SilenceRange[], duration: number) {
@@ -429,6 +450,47 @@ export function App() {
     const c = changes.find((x) => x.id === id);
     if (c) seek(c.start + 0.01);
   }
+
+  // Tauri native file drops: HTML5 onDrop never fires for Finder drags,
+  // so also listen to the webview's drag-drop event and open via probe.
+  useEffect(() => {
+    if (!native) return;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/webview")
+      .then(({ getCurrentWebview }) =>
+        getCurrentWebview().onDragDropEvent(async (event) => {
+          if (event.payload.type !== "drop" || !event.payload.paths.length) return;
+          for (const p of event.payload.paths) {
+            try {
+              if (/\.json$/i.test(p)) {
+                await loadProject(p);
+              } else {
+                const vid = await loadVideoAt(p);
+                if (!vid) {
+                  const msg = `unsupported file: ${p}`;
+                  setNote(msg);
+                  logUi(msg);
+                  continue;
+                }
+                await hydrate(vid);
+              }
+              break; // only first file
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              setNote(`Couldn't open dropped file (${msg}).`);
+              logUi(`tauri drop failed ${p}: ${msg}`);
+            }
+          }
+        })
+      )
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((e) => logUi(`drop listen failed: ${e instanceof Error ? e.message : String(e)}`));
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

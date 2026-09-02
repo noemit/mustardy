@@ -1,6 +1,6 @@
 {
   "name": "mustardy-video-editor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Video editor that trims the pauses for you. Timeline-first cutting, FFmpeg export, fully offline.",
   "author": "Mustardy",
   "license": "MIT",
