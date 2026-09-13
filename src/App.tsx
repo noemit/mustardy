@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LandingHero } from "./components/LandingHero";
 import { Timeline } from "./components/Timeline";
 import { Titlebar } from "./components/Titlebar";
 import { VideoStage } from "./components/VideoStage";
@@ -65,6 +66,7 @@ export function App() {
   const [activity, setActivity] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [editorOpen, setEditorOpen] = useState(native);
 
   const changesRef = useRef(changes);
   const previewCutsRef = useRef(previewCuts);
@@ -510,65 +512,83 @@ export function App() {
   });
 
   const keepDur = video ? editedDuration(video.duration, changes, true) : 0;
+  const showLanding = !native && !video && !editorOpen;
+
+  function openFromTitlebar() {
+    setEditorOpen(true);
+    void loadFromPicker();
+  }
+
+  function openDroppedFile(file: File) {
+    setEditorOpen(true);
+    void loadFile(file);
+  }
 
   return (
     <div className="app">
       <Titlebar
         theme={settings?.theme || "light"}
         onToggleTheme={toggleTheme}
-        onOpen={loadFromPicker}
+        onOpen={openFromTitlebar}
         onSave={() => void saveProject()}
         onExport={onExport}
         onQuit={() => void quitApp()}
         canSave={Boolean(video)}
         canExport={Boolean(video) && !busy}
       />
-      <div className="workspace">
-        <div className="stage-col">
-          <VideoStage
-            video={video}
-            videoRef={videoRef}
-            standbyRef={standbyRef}
-            current={current}
-            playing={playing}
-            keepDur={keepDur}
-            loader={activity}
-            note={note}
-            onToggle={toggle}
-            onSeek={seek}
-            previewCuts={previewCuts}
-            onTogglePreview={() => setPreviewCuts((v) => !v)}
-            onOpen={loadFromPicker}
-            onDropFile={loadFile}
-          />
-          <Timeline
-            video={video}
-            current={current}
-            changes={changes}
-            silences={silences}
-            selectedId={selectedId}
-            envelope={envelope}
-            dropDb={settings?.silenceDrop ?? DEFAULT_SILENCE_DROP}
-            minDur={settings?.silenceMin ?? DEFAULT_SILENCE_MIN}
-            onDrop={setSilenceDrop}
-            onMinDur={setSilenceMin}
-            playing={playing}
-            normalize={Boolean(settings?.normalizeAudio)}
-            normalizeAmount={settings?.normalizeAmount ?? 0.7}
-            onNormalize={setNormalize}
-            onNormalizeAmount={setNormalizeAmount}
-            keepDur={keepDur}
-            onSeek={(t) => {
-              const src = isInAcceptedCut(t, changes) ? editedToSource(t, video?.duration || 0, changes) : t;
-              seek(src);
-            }}
-            onSelect={selectChange}
-            onManualCut={upsertManualCut}
-            onAdjustManualCut={adjustManualCut}
-            onDeleteChange={deleteChange}
-          />
+      {showLanding ? (
+        <LandingHero
+          onOpenEditor={() => setEditorOpen(true)}
+          onDropFile={openDroppedFile}
+        />
+      ) : (
+        <div className="workspace">
+          <div className="stage-col">
+            <VideoStage
+              video={video}
+              videoRef={videoRef}
+              standbyRef={standbyRef}
+              current={current}
+              playing={playing}
+              keepDur={keepDur}
+              loader={activity}
+              note={note}
+              onToggle={toggle}
+              onSeek={seek}
+              previewCuts={previewCuts}
+              onTogglePreview={() => setPreviewCuts((v) => !v)}
+              onOpen={loadFromPicker}
+              onDropFile={loadFile}
+            />
+            <Timeline
+              video={video}
+              current={current}
+              changes={changes}
+              silences={silences}
+              selectedId={selectedId}
+              envelope={envelope}
+              dropDb={settings?.silenceDrop ?? DEFAULT_SILENCE_DROP}
+              minDur={settings?.silenceMin ?? DEFAULT_SILENCE_MIN}
+              onDrop={setSilenceDrop}
+              onMinDur={setSilenceMin}
+              playing={playing}
+              normalize={Boolean(settings?.normalizeAudio)}
+              normalizeAmount={settings?.normalizeAmount ?? 0.7}
+              onNormalize={setNormalize}
+              onNormalizeAmount={setNormalizeAmount}
+              keepDur={keepDur}
+              onSeek={(t) => {
+                const src = isInAcceptedCut(t, changes) ? editedToSource(t, video?.duration || 0, changes) : t;
+                seek(src);
+              }}
+              onSelect={selectChange}
+              onManualCut={upsertManualCut}
+              onAdjustManualCut={adjustManualCut}
+              onDeleteChange={deleteChange}
+            />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

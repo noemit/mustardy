@@ -233,6 +233,174 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   position: relative;
 }
 
+/* --- web landing --- */
+.landing {
+  min-height: 0;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 18% 8%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 32rem),
+    var(--bg);
+}
+.landing-inner {
+  width: min(1120px, calc(100% - 48px));
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(54px, 9vh, 104px) 0 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.landing-lockup { margin-bottom: clamp(40px, 7vh, 72px); }
+.landing-wordmark {
+  margin-bottom: 18px;
+  font-family: Geist, ui-sans-serif, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.landing h1 {
+  max-width: 880px;
+  margin: 0;
+  font-family: Geist, ui-sans-serif, sans-serif;
+  font-size: clamp(42px, 6.3vw, 78px);
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+.landing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(480px, 1.18fr);
+  gap: clamp(48px, 8vw, 100px);
+  align-items: center;
+}
+.landing-lede {
+  max-width: 34ch;
+  margin: 0 0 28px;
+  color: var(--muted);
+  font-size: clamp(18px, 2vw, 22px);
+  line-height: 1.45;
+}
+.landing-cta { padding: 11px 20px; }
+.landing-drop-note {
+  margin: 12px 0 30px;
+  color: var(--faint);
+  font-size: 13px;
+}
+.proofs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.proofs li {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+}
+.terminal-card {
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--bg-1);
+  box-shadow: var(--shadow);
+}
+.terminal-head {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--faint);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+}
+.terminal-dots { display: flex; gap: 5px; }
+.terminal-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line-2);
+}
+.terminal-body { padding: 22px; }
+.terminal-intro {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.command-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 9px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.command-row code {
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  color: var(--fg);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.command-row code span { color: var(--accent); }
+.command-copy {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 3px 0 3px 8px;
+  color: var(--muted);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+}
+.command-copy:hover { color: var(--fg); }
+.json-sample {
+  margin: 16px 0 0;
+  padding: 14px;
+  overflow: auto;
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--bg-2) 54%, transparent);
+  color: var(--muted);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.terminal-local {
+  margin: 16px 0 0;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+@media (max-width: 800px) {
+  .landing-inner {
+    width: min(620px, calc(100% - 32px));
+    padding: 44px 0 48px;
+    justify-content: flex-start;
+  }
+  .landing-lockup { margin-bottom: 38px; }
+  .landing h1 { font-size: clamp(40px, 12vw, 62px); }
+  .landing-grid { grid-template-columns: 1fr; gap: 40px; }
+  .landing-lede { max-width: 38ch; }
+}
+
+@media (max-width: 480px) {
+  .landing-inner { width: calc(100% - 24px); padding-top: 34px; }
+  .landing h1 { font-size: 39px; }
+  .terminal-body { padding: 14px; }
+  .terminal-intro { line-height: 1.45; }
+}
+
 .stage-col {
   min-height: 0;
   display: grid;
