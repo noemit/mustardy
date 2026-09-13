@@ -525,6 +525,14 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   font-size: 13px;
   font-family: "Geist Mono", ui-monospace, monospace;
 }
+.audio-warning {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--warn);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .play {
   width: 40px;
   height: 33px;

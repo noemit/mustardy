@@ -165,6 +165,11 @@ export function VideoStage({
               <em> −{formatTime(saved)}</em>
             </span>
           )}
+          {!video.hasAudio && (
+            <span className="audio-warning" role="status">
+              No audio track detected. Automatic pause trimming is unavailable; manual timeline cuts still work.
+            </span>
+          )}
           {note && <span className="cut-stat">{note}</span>}
         </div>
       )}
