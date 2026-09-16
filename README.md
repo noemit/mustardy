@@ -44,6 +44,33 @@ normalization.
 
 Mustardy runs on macOS (Apple Silicon) and Linux.
 
+## CLI
+
+The `mustardy` binary runs headless when you give it a command, so agents and
+scripts can trim silences without opening the app:
+
+```bash
+mustardy trim talk.mp4                       # -> talk-trimmed.mp4 (30 dB / 0.9 s, normalized)
+mustardy trim talk.mp4 -o cut.mp4 --drop 24 --min 0.5 --no-normalize
+mustardy trim talk.mp4 --dry-run --json      # report the cuts, write nothing
+```
+
+`--drop` is how far below talking a stretch must fall to count as a pause
+(8–35 dB). `--min` is the shortest pause to remove, in seconds. Both default to
+the same values as the editor and can be overridden per run. Audio
+normalization is on by default too; pass `--no-normalize` to leave the audio
+untouched. `--json` prints the result as JSON for tooling; progress goes to
+stderr so stdout stays clean. `--dry-run` reports without writing, and
+`--no-visual` skips the picture-change scan for speed.
+
+On Linux the packaged app already puts `mustardy` on your PATH. On macOS the
+app lives in a bundle, so run `mustardy install-cli` once from the binary under
+`Mustardy.app/Contents/MacOS/` to symlink it into `/usr/local/bin`.
+
+For CI or a server with no desktop toolchain, `cargo build -p mustardy-core
+--bin mustardy-cli` builds the same commands without Tauri or GTK. Run
+`mustardy --help` for the full list.
+
 ## Develop
 
 You'll need Node and a Rust toolchain. Install Rust with
@@ -80,8 +107,8 @@ macOS builds are signed with the Developer ID in
 - `src/` — React UI (video stage, timeline)
 - `src-tauri/` — Tauri shell (`src/main.rs`, commands and events only)
 - `src-tauri/core/` — `mustardy-core`: ffmpeg probe, audio-envelope scan,
-  visual-change check, and export. No Tauri deps, so it builds headlessly:
-  `cargo build -p mustardy-core`
+  visual-change check, export, and the headless CLI (`cli.rs` / `silence.rs`).
+  No Tauri deps, so it builds headlessly: `cargo build -p mustardy-core`
 - `scripts/prep.mjs` — sidecar staging
 
 ## Knobs

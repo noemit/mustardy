@@ -104,6 +104,17 @@ fn ensure_text_scope(path: &str) -> Result<(), String> {
 }
 
 fn main() {
+    // CLI mode: any real argument (macOS Finder's `-psn_…` cookie aside) means
+    // run headless and exit — `mustardy trim in.mp4 -o out.mp4`, `--help`, …
+    // No arguments opens the GUI.
+    let cli_args: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|a| !a.starts_with("-psn"))
+        .collect();
+    if !cli_args.is_empty() {
+        std::process::exit(mustardy_core::cli::run(&cli_args));
+    }
+
     mustardy_core::log::line(&format!("mustardy starting (pid {})", std::process::id()));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

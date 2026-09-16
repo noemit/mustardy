@@ -208,7 +208,7 @@ export async function loadSettings(): Promise<Settings> {
     silenceMin: stored.silenceMin ?? DEFAULT_SILENCE_MIN,
     silenceDrop:
       typeof stored.silenceDrop === "number" && Number.isFinite(stored.silenceDrop)
-        ? Math.min(28, Math.max(8, stored.silenceDrop))
+        ? Math.min(35, Math.max(8, stored.silenceDrop))
         : DEFAULT_SILENCE_DROP,
     normalizeAudio: stored.normalizeAudio !== false,
     normalizeAmount:

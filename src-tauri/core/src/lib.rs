@@ -3,8 +3,10 @@
 //! This crate intentionally has **no tauri imports** so it can be built and
 //! tested headlessly.
 
+pub mod cli;
 pub mod ffmpeg;
 pub mod log;
+pub mod silence;
 pub mod visual;
 
 use serde::{Deserialize, Serialize};
@@ -45,6 +47,8 @@ pub struct Change {
     pub status: String,
     pub label: String,
     pub rationale: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
