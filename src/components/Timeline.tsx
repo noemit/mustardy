@@ -459,9 +459,9 @@ export function Timeline({
             <input
               type="range"
               min={8}
-              max={28}
+              max={35}
               step={1}
-              value={Math.min(28, Math.max(8, dropDb))}
+              value={Math.min(35, Math.max(8, dropDb))}
               disabled={!envelope || playing}
               onChange={(e) => onDrop(Number(e.target.value))}
             />

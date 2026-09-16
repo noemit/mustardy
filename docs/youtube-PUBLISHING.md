@@ -55,4 +55,5 @@ This is the canonical doc for packaging a video for upload. The `publish-video` 
 4. **Any number not verifiable from the footage gets a `<CONFIRM: …>` placeholder** (final session cost, durations, counts). Never state a precise figure read off a mid-session frame — the cuberry draft said ~$0.09, the real total was ~$0.34.
 5. **No "What you'll see" bullet list** — it duplicates the chapters. Keep chapter labels factual; don't speculate ("(next project?)") about cold opens or content you can't identify.
 6. **Don't recap or spoil the video.** Setup only (who sent it, the one thing they asked), then what you did in the blandest terms, then links. No pink hoodie, no credit fail, no verdict, no "five prompts" recap — if it's a chapter, it doesn't belong in the prose. VoxTale roast (Aug 21) draft recapped the face gag, OpenRouter dying, and the 20-card skill. Em cut the body to: landing-page setup → "I signed in and ran yesterday's video through it, checking out the UX and output." → "I also show and compare to my skill that I use for my videos." → CTA + links.
+7. **Never add hashtags** to the description. Tags go in the Tags block only, comma-separated, no `#`.
 

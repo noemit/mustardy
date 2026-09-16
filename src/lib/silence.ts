@@ -9,8 +9,8 @@ export type AudioEnvelope = {
 export const ENVELOPE_HOP_S = 0.02;
 export const MIN_SILENCE_S = 0.02;
 /** dB below talking before a gap counts as a pause. Higher = keep quieter speech. */
-export const DEFAULT_SILENCE_DROP = 18;
-export const DEFAULT_SILENCE_MIN = 0.4;
+export const DEFAULT_SILENCE_DROP = 30;
+export const DEFAULT_SILENCE_MIN = 0.9;
 const HYST_DB = 4;
 const NOISE_HEADROOM_DB = 3;
 
@@ -56,7 +56,7 @@ export function silencesFromEnvelope(
   const { hop, dbs } = env;
   if (!dbs.length || !(hop > 0)) return [];
   const min = Math.max(0, minDur);
-  const drop = Math.min(28, Math.max(8, dropDb));
+  const drop = Math.min(35, Math.max(8, dropDb));
   const sorted = [...dbs].sort((a, b) => a - b);
   const noise = percentile(sorted, 12);
   const speech = percentile(sorted, 80);

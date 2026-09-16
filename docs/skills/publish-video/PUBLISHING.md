@@ -44,4 +44,5 @@ This is the canonical doc for packaging a video for upload. The `publish-video` 
 3. **Talk to the viewer, not about the video.** Include a "who this is for" line ("If you want to dip your feet into vibecoding something practical…"). Keep the middle short — one honest line about mistakes/questions beats a play-by-play; timestamps carry the outline.
 4. **Any number not verifiable from the footage gets a `<CONFIRM: …>` placeholder** (final session cost, durations, counts). Never state a precise figure read off a mid-session frame — the cuberry draft said ~$0.09, the real total was ~$0.34.
 5. **No "What you'll see" bullet list** — it duplicates the chapters. Keep chapter labels factual; don't speculate ("(next project?)") about cold opens or content you can't identify.
+6. **Never add hashtags** to the description. Tags go in the Tags block only, comma-separated, no `#`.
 

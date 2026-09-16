@@ -270,26 +270,17 @@ pub fn detect_silence(file_path: &str, noise: Option<&str>, duration: Option<f64
 /// Decode once to 20 ms RMS windows. The UI slides floor / min-length over this.
 pub fn audio_envelope(file_path: &str) -> CoreResult<AudioEnvelope> {
     let pcm = extract_pcm_16k(file_path)?;
-    const SR: usize = 16000;
-    let win = (SR / 50).max(1); // 20 ms
-    let hop = win as f64 / SR as f64;
-    let dbs: Vec<f32> = pcm
-        .chunks(win)
-        .map(|c| {
-            let rms = (c.iter().map(|&x| (x as f64) * (x as f64)).sum::<f64>() / c.len() as f64).sqrt();
-            (20.0 * rms.max(1e-9).log10()) as f32
-        })
-        .collect();
+    let env = crate::silence::envelope_from_pcm(&pcm, 16000);
     crate::log::line(&format!(
         "audio envelope: {} windows ({:.0} ms) of {}",
-        dbs.len(),
-        hop * 1000.0,
+        env.dbs.len(),
+        env.hop * 1000.0,
         Path::new(file_path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| file_path.to_string()),
     ));
-    Ok(AudioEnvelope { hop, dbs })
+    Ok(env)
 }
 
 fn parse_db(s: &str) -> Option<f64> {
