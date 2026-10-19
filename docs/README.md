@@ -1,12 +1,8 @@
 # Docs
 
-Copied in so agents working on Mustardy have the same shipping context as the rest of the harness.
+The agent docs that used to live here were private workflow/process material, not Mustardy product documentation, so they moved out of this public repo on 2026-10-19.
 
-## YouTube
+- YouTube channel publishing workflow → `C:\Users\Noemi\workspace\youtube-publishing\PUBLISHING.md` (container: `/workspace/youtube-publishing/PUBLISHING.md`)
+- Harness skills (`good-writing`, `ship`) → `C:\Users\Noemi\workspace\harness-skills\` (live install: `C:\Users\Noemi\pc-container\skills\`, container `/opt/pi-skills/`)
 
-The YouTube publishing workflow is private and does **not** live in this repo: `C:\Users\Noemi\workspace\youtube-publishing\PUBLISHING.md` (container: `/workspace/youtube-publishing/PUBLISHING.md`).
-
-## Skills
-
-- [skills/good-writing](skills/good-writing/SKILL.md)
-- [skills/ship](skills/ship/SKILL.md)
+Nothing in this folder is Mustardy app documentation.
