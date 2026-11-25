@@ -91,11 +91,11 @@ impl TempDirGuard {
         let name = format!(".mustardy-tmp-{}-{seq}", std::process::id());
         let candidates: Vec<PathBuf> = [
             explicit_base.map(PathBuf::from),
-            preferred_parent.and_then(|p| {
+            preferred_parent.map(|p| {
                 if p.as_os_str().is_empty() {
-                    Some(PathBuf::from("."))
+                    PathBuf::from(".")
                 } else {
-                    Some(p.to_path_buf())
+                    p.to_path_buf()
                 }
             }),
             Some(std::env::temp_dir()),

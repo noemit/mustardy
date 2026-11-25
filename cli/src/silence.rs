@@ -96,7 +96,7 @@ pub fn analyze_envelope(
     min_dur: f64,
 ) -> EnvelopeAnalysis {
     let (hop, dbs) = (&env.hop, &env.dbs);
-    if dbs.is_empty() || !(*hop > 0.0) {
+    if dbs.is_empty() || !hop.is_finite() || *hop <= 0.0 {
         return EnvelopeAnalysis {
             ranges: Vec::new(),
             stats: AudioStats {

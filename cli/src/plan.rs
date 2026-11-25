@@ -70,6 +70,7 @@ fn default_schema_version() -> u32 {
 }
 
 impl CutPlan {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_analysis(
         input: String,
         output: Option<String>,
@@ -305,7 +306,7 @@ pub fn cuts_from_srt(srt_path: &Path, targets: &[String], duration: f64) -> Core
             if needle.contains(' ') {
                 cue_text.contains(needle.as_str())
             } else {
-                tokens.iter().any(|&tok| tok == needle.as_str())
+                tokens.contains(&needle.as_str())
             }
         });
         if let Some(word) = matched {

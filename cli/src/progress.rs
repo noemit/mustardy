@@ -101,7 +101,7 @@ impl ProgressReporter {
                 let filled = ((pct as usize) * width) / 100;
                 let bar = format!("{}{}", "█".repeat(filled), "░".repeat(width - filled));
                 let elapsed = self.start.elapsed().as_secs_f64();
-                let eta = if pct >= 5 && pct < 100 && elapsed > 1.0 {
+                let eta = if (5..100).contains(&pct) && elapsed > 1.0 {
                     let rem = elapsed * (100.0 - pct as f64) / (pct as f64);
                     format!(" ETA {}", fmt_dur(rem))
                 } else {

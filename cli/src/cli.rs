@@ -351,7 +351,7 @@ pub struct DoctorCmd {
 fn parse_db_arg(raw: &str) -> Result<f64, String> {
     let n: f64 = raw
         .trim()
-        .trim_end_matches(|c| c == 'b' || c == 'B' || c == 'd' || c == 'D')
+        .trim_end_matches(['b', 'B', 'd', 'D'])
         .trim()
         .parse()
         .map_err(|_| format!("expects a number in dB (8–35), got '{raw}'"))?;
@@ -364,7 +364,7 @@ fn parse_db_arg(raw: &str) -> Result<f64, String> {
 fn parse_secs_arg(raw: &str) -> Result<f64, String> {
     let n: f64 = raw
         .trim()
-        .trim_end_matches(|c| c == 's' || c == 'S')
+        .trim_end_matches(['s', 'S'])
         .trim()
         .parse()
         .map_err(|_| format!("expects seconds, got '{raw}'"))?;

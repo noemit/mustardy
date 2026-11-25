@@ -116,20 +116,15 @@ pub struct ExportPayload {
     pub normalize_amount: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum VideoCodec {
     /// Software libx264 (default, most consistent quality/size).
+    #[default]
     Software,
     /// Probe best available hardware H.264 encoder, falling back to libx264.
     Hardware,
     /// Explicit FFmpeg encoder name (e.g. `h264_nvenc`, `h264_videotoolbox`, `libx265`).
     Custom(String),
-}
-
-impl Default for VideoCodec {
-    fn default() -> Self {
-        VideoCodec::Software
-    }
 }
 
 #[derive(Debug, Clone)]
