@@ -1,117 +1,138 @@
 # Mustardy
 
-Mustardy is a video editor that trims the pauses for you. It's a Tauri
-desktop app that runs fully offline. FFmpeg does the work, so nothing
-leaves your machine.
+A fast, offline CLI that trims dead air out of video and audio files using FFmpeg.
 
-## How it works
+- **Audio-envelope pause detection** (20 ms RMS windows, streamed in O(1) RAM) with automatic noise-floor adaptation and diagnostics.
+- **Parallel visual-change protection** — pixel-diffs small frames across every quiet stretch so scene cuts, slide switches, and dissolves are kept intact while static pauses are removed.
+- **Fast single-pass / chunked-parallel FFmpeg export** — trims, micro-fades audio joins to eliminate clicks/pops, normalizes speech (`-16 LUFS`), and writes `+faststart` without redundant passes. Supports hardware encoders (`--hw`).
+- **Zero-reencode NLE timelines** — export `.fcpxml` (Final Cut Pro / DaVinci Resolve / Premiere) or `.edl` (CMX 3600) in under a second.
+- **Audio-only & batch ready** — trims `.wav`, `.mp3`, `.m4a`, `.flac`, and multi-file batches (`--out-dir`, `--in-place`, `--skip-existing`).
+- **Agent & script native** — composable `scan` → edit → `apply` plan JSON, `--json` output (including structured JSON errors), and `--progress jsonl`.
 
-Open a video and Mustardy runs two scans, then applies the trims right away.
+## Install
 
-It measures silence from the audio itself using RMS windows. Only stretches
-that dip well below the floor get cut. Each cut keeps some air at the edges,
-so quiet speech and soft word endings stay. When the fixed floor finds
-nothing, the scan adapts to the file's own noise floor (see
-`src-tauri/core/src/ffmpeg.rs`).
+Requires `ffmpeg` and `ffprobe` on `PATH` (or overridden via `MUSTARDY_FFMPEG` / `MUSTARDY_FFPROBE`).
 
-Each quiet stretch is also checked visually. Small frames across the gap are
-pixel-diffed. If the picture changes mid-pause, the trim splits around the
-transition. The static parts go, the visual change stays.
-
-Sliders re-threshold the scan live. You can change how quiet counts as a
-pause and the minimum pause length without re-reading the file.
-
-There's no accept/reject step. Zoom the timeline with +/−. Drag across it to
-add a manual cut, drag a cut to move or resize it, and press Delete (or the
-cut tooltip) to remove one.
-
-## Projects
-
-Save writes a `.mustardy.json` next to the video, or wherever you pick. It
-stores silences, tags, and queued edits. Open accepts that file and reloads
-without re-scanning.
-
-## Timeline tags
-
-Press `T` or the `tag` button to mark the playhead. Tags auto-name like
-`A45`, `B34` (a letter plus the whole seconds). Click a tag to seek.
-Right-click to remove.
-
-## Export
-
-Export bakes the kept segments with FFmpeg. You can add podcast-style audio
-normalization.
-
-Mustardy runs on macOS (Apple Silicon) and Linux.
-
-## CLI
-
-The `mustardy` binary runs headless when you give it a command, so agents and
-scripts can trim silences without opening the app:
+### From source (Cargo)
 
 ```bash
-mustardy trim talk.mp4                       # -> talk-trimmed.mp4 (30 dB / 0.9 s, normalized)
-mustardy trim talk.mp4 -o cut.mp4 --drop 24 --min 0.5 --no-normalize
-mustardy trim talk.mp4 --dry-run --json      # report the cuts, write nothing
+cargo install --git https://github.com/noemit/mustardy
 ```
 
-`--drop` is how far below talking a stretch must fall to count as a pause
-(8–35 dB). `--min` is the shortest pause to remove, in seconds. Both default to
-the same values as the editor and can be overridden per run. Audio
-normalization is on by default too; pass `--no-normalize` to leave the audio
-untouched. `--json` prints the result as JSON for tooling; progress goes to
-stderr so stdout stays clean. `--dry-run` reports without writing, and
-`--no-visual` skips the picture-change scan for speed.
-
-On Linux the packaged app already puts `mustardy` on your PATH. On macOS the
-app lives in a bundle, so run `mustardy install-cli` once from the binary under
-`Mustardy.app/Contents/MacOS/` to symlink it into `/usr/local/bin`.
-
-For CI or a server with no desktop toolchain, `cargo build -p mustardy-core
---bin mustardy-cli` builds the same commands without Tauri or GTK. Run
-`mustardy --help` for the full list.
-
-## Develop
-
-You'll need Node and a Rust toolchain. Install Rust with
-`curl https://sh.rustup.rs -sSf | sh`. On Debian or Ubuntu also run
-`sudo apt install build-essential libwebkit2gtk-4.1-dev`.
+### Homebrew (head or tap)
 
 ```bash
-npm install
-npm run prep        # stages ffmpeg/ffprobe sidecars into src-tauri/binaries
-npm run dev         # vite + tauri
+brew install --HEAD ./Formula/mustardy.rb
 ```
 
-`npm run dev:ui` still gives you the plain-web UI without the native
-sidecars.
+### Prebuilt releases
 
-## Logs
+Download the tarball for macOS (`aarch64`/`x86_64`) or Linux (`x86_64`/`aarch64`) from [GitHub Releases](https://github.com/noemit/mustardy/releases).
 
-Everything the core does is appended to `mustardy.log` in the repo root.
-Lines are timestamped, and stderr keeps a copy too. The file is truncated past
-2 MB. Override the path with `MUSTARDY_LOG=/some/file.log`.
-
-## Package
+Verify your setup:
 
 ```bash
-npm run pack:mac    # or pack:linux
+mustardy doctor
 ```
 
-macOS builds are signed with the Developer ID in
-`src-tauri/tauri.conf.json`. Set `APPLE_ID`, `APPLE_PASSWORD`
-(app-specific), and `APPLE_TEAM_ID` to also notarize.
+## Quickstart
 
-## Layout
+```bash
+# Default trim: 30 dB drop, 0.9 s min pause, visual-change check, podcast normalization
+mustardy trim talk.mp4
 
-- `src/` — React UI (video stage, timeline)
-- `src-tauri/` — Tauri shell (`src/main.rs`, commands and events only)
-- `src-tauri/core/` — `mustardy-core`: ffmpeg probe, audio-envelope scan,
-  visual-change check, export, and the headless CLI (`cli.rs` / `silence.rs`).
-  No Tauri deps, so it builds headlessly: `cargo build -p mustardy-core`
-- `scripts/prep.mjs` — sidecar staging
+# Snappy YouTube pacing using hardware encoding
+mustardy trim talk.mp4 --preset tight --hw
 
-## Knobs
+# Podcast audio-only trim (preserves .wav / .mp3 / .m4a / .flac)
+mustardy trim episode.wav --preset podcast
 
-- `MUSTARDY_FFMPEG` / `MUSTARDY_FFPROBE` — binary overrides
-- `MUSTARDY_LOG` — log file path
+# Zero-reencode timeline export for DaVinci Resolve / Final Cut / Premiere
+mustardy trim talk.mp4 -o talk.fcpxml
+mustardy trim talk.mp4 -o talk.edl
+
+# Batch trim a folder of clips
+mustardy trim clips/*.mp4 --out-dir trimmed/ --skip-existing
+
+# Combine silence trimming with explicit manual cuts or SRT filler words
+mustardy trim talk.mp4 --cut 0:00-0:12 --cut 14:20-end
+mustardy trim talk.mp4 --srt talk.srt --cut-words "um,uh,cut that"
+```
+
+## Two-Step Workflow (`scan` → `apply`)
+
+Avoid scanning a long recording twice, or let a script/agent edit the cut list before rendering:
+
+```bash
+# 1. Scan once and save a reusable plan JSON
+mustardy scan talk.mp4 -o plan.json --json
+
+# 2. Inspect or edit plan.json, then render without re-scanning
+mustardy apply plan.json -o talk-trimmed.mp4
+mustardy apply plan.json -o talk.fcpxml    # or export directly to an NLE timeline
+```
+
+## Presets & Pacing Options
+
+| Preset | `--drop` | `--min` | `--pad-before` / `--pad-after` | Normalize |
+|---|---|---|---|---|
+| `natural` (default) | `30 dB` | `0.90 s` | `0.18 s` / `0.18 s` | on (`0.7`) |
+| `tight` | `24 dB` | `0.45 s` | `0.10 s` / `0.08 s` | on (`0.7`) |
+| `podcast` | `28 dB` | `0.70 s` | `0.18 s` / `0.14 s` | on (`0.8`) |
+
+Key flags on `mustardy trim`:
+
+- `-o, --output <path>` — output file (default `<input>-trimmed.<ext>`)
+- `--format <media|fcpxml|edl>` — output format (also auto-detected from `-o` extension)
+- `--drop <dB>` — how far below talking counts as a pause (`8–35`, default `30`)
+- `--min <seconds>` — shortest pause to remove (default `0.9`)
+- `--pad <seconds>` / `--pad-before` / `--pad-after` — breathing room around speech
+- `--keep-edges` — keep edge padding at `0:00` and EOF instead of trimming cleanly
+- `--no-visual` — skip visual-change scan
+- `--no-normalize` / `--normalize-amount <0..1>` — control `-16 LUFS` podcast normalization
+- `--hw` / `--codec <name>` / `--crf <0..51>` / `--encode-preset <name>` — encoder tuning
+- `--crossfade <ms>` — audio micro-fade at cut joins (default `8`, `0` to disable)
+- `--fast-copy` — keyframe-snapped stream copy for instant drafts
+- `--out-dir <dir>` / `--in-place` / `--backup` / `--skip-existing` — batch workflows
+- `--dry-run` / `--json` / `--progress <auto|bar|plain|jsonl|none>` / `-q` / `-v`
+
+## Config File
+
+Save your microphone/room defaults in `./.mustardy.toml` or `~/.config/mustardy/config.toml`:
+
+```toml
+preset = "tight"
+hw = true
+crf = 19
+crossfade_ms = 8.0
+```
+
+CLI flags always override the config file.
+
+## Shell Completions
+
+```bash
+mustardy completions zsh  > ~/.zfunc/_mustardy
+mustardy completions bash > ~/.local/share/bash-completion/completions/mustardy
+mustardy completions fish > ~/.config/fish/completions/mustardy.fish
+```
+
+## Agent & Scripting Contract
+
+- `--json` writes structured JSON (schema v1, including `video`, `audio` diagnostics, `cuts`, and `keeps`) to **stdout**; all progress stays on **stderr**.
+- Errors with `--json` emit `{"ok": false, "code": "...", "error": "..."}` to stdout.
+- `--progress jsonl` streams NDJSON progress events (`{"event":"progress","percent":...}`) on stderr.
+- Exit codes: `0` success, `1` runtime/FFmpeg error, `2` usage/invalid arguments, `3` unsupported input (e.g. no audio track), `130` interrupted (`Ctrl-C`).
+
+## Environment Variables
+
+- `MUSTARDY_FFMPEG` / `MUSTARDY_FFPROBE` — explicit binary paths
+- `MUSTARDY_LOG` — optional path for append-only debug log file (off by default)
+
+## Development
+
+```bash
+cargo test
+cargo clippy --all-targets
+cargo build --release
+```
