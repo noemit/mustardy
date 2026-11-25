@@ -160,8 +160,6 @@ fn resolve_bin_uncached(name: &str) -> String {
     let plain = exe_name(name);
     let tripled = exe_name(&format!("{name}-{TRIPLE}"));
     let mut dirs: Vec<PathBuf> = Vec::new();
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    dirs.push(manifest.join("src-tauri/binaries"));
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             dirs.push(dir.to_path_buf());
@@ -176,45 +174,6 @@ fn resolve_bin_uncached(name: &str) -> String {
                 crate::log::debug(&format!("resolve {name}: {resolved}"));
                 return resolved;
             }
-        }
-    }
-    let nm = manifest.join("node_modules");
-    let npm_cands: Vec<PathBuf> = if name == "ffmpeg" {
-        vec![nm.join("ffmpeg-static").join(&plain)]
-    } else {
-        let (os, arch) = if cfg!(target_os = "macos") {
-            (
-                "darwin",
-                if cfg!(target_arch = "aarch64") {
-                    "arm64"
-                } else {
-                    "x64"
-                },
-            )
-        } else if cfg!(windows) {
-            ("win32", "x64")
-        } else {
-            (
-                "linux",
-                if cfg!(target_arch = "aarch64") {
-                    "arm64"
-                } else {
-                    "x64"
-                },
-            )
-        };
-        vec![nm
-            .join("ffprobe-static")
-            .join("bin")
-            .join(os)
-            .join(arch)
-            .join(&plain)]
-    };
-    for p in npm_cands {
-        if exists(&p) {
-            let resolved = p.to_string_lossy().into_owned();
-            crate::log::debug(&format!("resolve {name}: npm {resolved}"));
-            return resolved;
         }
     }
     crate::log::debug(&format!("resolve {name}: PATH:{name}"));

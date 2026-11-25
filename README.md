@@ -13,16 +13,22 @@ A fast, offline CLI that trims dead air out of video and audio files using FFmpe
 
 Requires `ffmpeg` and `ffprobe` on `PATH` (or overridden via `MUSTARDY_FFMPEG` / `MUSTARDY_FFPROBE`).
 
-### From source (Cargo)
+### Shell one-liner (macOS & Linux, no Rust required)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/noemit/mustardy/main/install.sh | sh
+```
+
+### Homebrew
+
+```bash
+brew install ./Formula/mustardy.rb
+```
+
+### Cargo
 
 ```bash
 cargo install --git https://github.com/noemit/mustardy
-```
-
-### Homebrew (head or tap)
-
-```bash
-brew install --HEAD ./Formula/mustardy.rb
 ```
 
 ### Prebuilt releases

@@ -9,6 +9,7 @@ homepage = "https://mustardy.com"
 readme = "README.md"
 keywords = ["video", "ffmpeg", "silence", "cli", "editing"]
 categories = ["command-line-utilities", "multimedia::video", "multimedia::audio"]
+exclude = ["/demo.mp4", "/.github", "/Formula", "/install.sh"]
 edition = "2021"
 rust-version = "1.85"
 

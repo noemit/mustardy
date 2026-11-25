@@ -1,15 +1,5 @@
-node_modules
-dist
-release
-target
+/target
 .DS_Store
 *.log
 .env
-.vite
-src-tauri/target
-src-tauri/binaries
-src-tauri/gen
 mustardy.log
-
-__pycache__/
-*.pyc
